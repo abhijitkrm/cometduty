@@ -46,7 +46,7 @@ func Load(source, chainDir, password string) (*Config, error) {
 			}
 		}
 	}
-	if err := yaml.Unmarshal(ExpandEnv(raw), c); err != nil {
+	if err := yaml.UnmarshalStrict(ExpandEnv(raw), c); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", source, err)
 	}
 
@@ -150,7 +150,7 @@ func mergeChainDir(c *Config, dir string) error {
 			return fmt.Errorf("reading %s: %w", full, err)
 		}
 		cc := &ChainConfig{}
-		if err := yaml.Unmarshal(ExpandEnv(b), cc); err != nil {
+		if err := yaml.UnmarshalStrict(ExpandEnv(b), cc); err != nil {
 			return fmt.Errorf("parsing %s: %w", full, err)
 		}
 		// strip only a trailing .yml/.yaml — keep interior dots in the name
