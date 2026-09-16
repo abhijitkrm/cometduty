@@ -192,7 +192,7 @@ func (c *Chain) watchLoop(ctx context.Context) {
 				c.stallAlarm = true
 				c.alert(cfg.ChainID, nil, "stalled:"+cfg.ChainID, false, "critical",
 					fmt.Sprintf("stalled: no new block on %s for %d minutes", cfg.ChainID, a.StalledMinutes))
-			case !stalled && c.stallAlarm && !c.lastBlockTime.IsZero():
+			case !stalled && (c.stallAlarm || c.eng.HasOpen("stalled:"+cfg.ChainID)) && !c.lastBlockTime.IsZero():
 				// blocks are flowing again — resolve. (v2 checked IsZero() here,
 				// which can never be true once monitoring starts.)
 				c.stallAlarm = false
@@ -208,7 +208,7 @@ func (c *Chain) watchLoop(ctx context.Context) {
 				c.noNodesAlarm = true
 				c.alert(cfg.ChainID, nil, "no-nodes:"+cfg.ChainID, false, "critical",
 					fmt.Sprintf("no RPC endpoints are working for %s", cfg.ChainID))
-			case !c.noNodes && c.noNodesAlarm:
+			case !c.noNodes && (c.noNodesAlarm || c.eng.HasOpen("no-nodes:"+cfg.ChainID)):
 				c.noNodesAlarm = false
 				c.alert(cfg.ChainID, nil, "no-nodes:"+cfg.ChainID, true, "info",
 					fmt.Sprintf("no RPC endpoints are working for %s", cfg.ChainID))
@@ -225,7 +225,7 @@ func (c *Chain) watchLoop(ctx context.Context) {
 					c.alert(cfg.ChainID, nil, key, false, root.NodeDownSeverity,
 						fmt.Sprintf("RPC node %s down for > %d minutes on %s: %s", nodeLabel(n), root.NodeDownMin, cfg.ChainID, n.lastMsg))
 				}
-			} else if nodeAlerted[key] && !n.down {
+			} else if !n.down && (nodeAlerted[key] || c.eng.HasOpen(key)) {
 				nodeAlerted[key] = false
 				c.alert(cfg.ChainID, nil, key, true, "info",
 					fmt.Sprintf("RPC node %s recovered on %s", nodeLabel(n), cfg.ChainID))
@@ -242,19 +242,27 @@ func (c *Chain) watchLoop(ctx context.Context) {
 			if tg.vc.Alerts != nil {
 				va = *tg.vc.Alerts
 			}
-			// inactive transition (jailed / tombstoned / unbonded)
-			if va.AlertIfInactive && tg.prev != nil && tg.prev.Bonded != tg.info.Bonded {
+			// inactive transition (jailed / tombstoned / unbonded). info/prev
+			// only refresh every 45s, so latch on tg.inactive — raise once when
+			// it first shows unbonded, resolve once when it returns.
+			if va.AlertIfInactive {
 				key := "inactive:" + tg.info.Valcons
-				if !tg.info.Bonded {
+				switch {
+				case !tg.info.Bonded && tg.inactive == "":
 					tg.inactive = "jailed"
 					if tg.info.Tombstoned {
 						tg.inactive = "tombstoned (permanent)"
 					}
 					c.alert(cfg.ChainID, tg, key, false, "critical",
 						fmt.Sprintf("%s is no longer in the active set on %s: %s", tg.info.Moniker, cfg.ChainID, tg.inactive))
-				} else {
+				case tg.info.Bonded && (tg.inactive != "" || c.eng.HasOpen(key)):
+					was := tg.inactive
+					if was == "" {
+						was = "inactive" // restored alert; local latch never set
+					}
+					tg.inactive = ""
 					c.alert(cfg.ChainID, tg, key, true, "info",
-						fmt.Sprintf("%s is back in the active set on %s", tg.info.Moniker, cfg.ChainID))
+						fmt.Sprintf("%s is back in the active set on %s (was %s)", tg.info.Moniker, cfg.ChainID, was))
 				}
 			}
 			// consecutive misses
@@ -264,7 +272,7 @@ func (c *Chain) watchLoop(ctx context.Context) {
 					tg.missedAlarm = true
 					c.alert(cfg.ChainID, tg, key, false, va.ConsecutivePriority,
 						fmt.Sprintf("%s has missed %d consecutive blocks on %s", tg.info.Moniker, tg.consec, cfg.ChainID))
-				} else if tg.missedAlarm && tg.consec < int64(va.ConsecutiveMissed) {
+				} else if tg.consec < int64(va.ConsecutiveMissed) && (tg.missedAlarm || c.eng.HasOpen(key)) {
 					tg.missedAlarm = false
 					c.alert(cfg.ChainID, tg, key, true, "info",
 						fmt.Sprintf("%s consecutive-miss alarm cleared on %s", tg.info.Moniker, cfg.ChainID))
@@ -278,7 +286,7 @@ func (c *Chain) watchLoop(ctx context.Context) {
 					tg.pctAlarm = true
 					c.alert(cfg.ChainID, tg, key, false, va.PercentagePriority,
 						fmt.Sprintf("%s missed %.1f%% of the slashing window on %s", tg.info.Moniker, pct, cfg.ChainID))
-				} else if tg.pctAlarm && pct <= float64(va.WindowPct) {
+				} else if pct <= float64(va.WindowPct) && (tg.pctAlarm || c.eng.HasOpen(key)) {
 					tg.pctAlarm = false
 					// v2 bug fixed: this must send resolved=true
 					c.alert(cfg.ChainID, tg, key, true, "info",
