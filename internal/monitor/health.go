@@ -294,6 +294,9 @@ func (c *Chain) watchLoop(ctx context.Context) {
 				}
 			}
 		}
+		if c.met != nil {
+			c.met.ActiveAlerts(c.name, cfg.ChainID, c.eng.ActiveCount(c.name))
+		}
 		c.mu.Unlock()
 	}
 }

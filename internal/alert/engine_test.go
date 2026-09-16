@@ -154,10 +154,7 @@ func TestActiveCountAndAlerts(t *testing.T) {
 	if n := e.ActiveCount("chain"); n != 1 {
 		t.Fatalf("after resolve active=%d want 1", n)
 	}
-	got := e.ActiveAlerts("chain")
-	if len(got) != 1 || got[0] != "b" {
-		t.Errorf("active alerts: %v", got)
-	}
+
 }
 
 func TestSnapshotRestore(t *testing.T) {

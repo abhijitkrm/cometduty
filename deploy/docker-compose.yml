@@ -7,7 +7,6 @@ services:
       - ./chains.d:/etc/cometduty/chains.d:ro   # optional per-chain files
       - cometduty-data:/data
     ports:
-      - "8888:8888"     # dashboard
       - "28686:28686"   # prometheus
     environment:
       # referenced from config.yml via ${VAR} expansion

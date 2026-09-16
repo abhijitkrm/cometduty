@@ -25,14 +25,14 @@ CometBFT RPC (websocket + polling)
 │  NewBlock + Vote │    │ per validator│    │ dedup · resolve · flap  │
 └──────────────────┘    └──────┬───────┘    └──────────┬──────────────┘
                                ▼                       ▼
-                     dashboard + Prometheus      Slack · PagerDuty ·
-                     (block grid, health)        Discord · Telegram ·
+                     Prometheus metrics        Slack · PagerDuty ·
+                                               Discord · Telegram ·
                                                webhook · ntfy · Opsgenie
 ```
 
 For every block, cometduty classifies your validator as **proposed**, **signed**
-(commit included), **precommit-only**, **prevote-only**, or **missed** — the
-same states the dashboard grid renders, oldest-to-newest at a glance.
+(commit included), **precommit-only**, **prevote-only**, or **missed** — exported
+to Prometheus so you can graph signing streaks in Grafana or your stack of choice.
 
 ## Quick start
 
@@ -75,13 +75,13 @@ cometduty test-alert discord -f config.yml   # verify your pager works
 cometduty -f config.yml                 # run
 ```
 
-Dashboard on `:8888`, Prometheus metrics on `:28686/metrics`.
+Prometheus metrics on `:28686/metrics`, plus `/healthz` for liveness probes.
 
 Docker (multi-arch images on `ghcr.io/abhijitkrm/cometduty`):
 
 ```sh
 docker run -v $PWD/config.yml:/config/config.yml:ro -v cd-data:/data \
-  -p 8888:8888 -p 28686:28686 ghcr.io/abhijitkrm/cometduty:latest
+  -p 28686:28686 ghcr.io/abhijitkrm/cometduty:latest
 ```
 
 ## What it alerts on
@@ -125,10 +125,11 @@ double-page you or forget to resolve).
 - Field names match tenderduty v2 where practical — see
   [docs/MIGRATING.md](docs/MIGRATING.md) for the deltas.
 - New in v3: `validators:` list (multi-validator per chain), lag alerts,
-  per-validator alert overrides, `webhook`/`ntfy`/`opsgenie`, dashboard basic
-  auth + bind address, `${ENV_VAR}` expansion, `chains.d/` per-chain files,
-  per-node `headers`/`insecure_tls`/`disable_vote`, `public_fallback` to
-  chain-registry RPCs.
+  per-validator alert overrides, `webhook`/`ntfy`/`opsgenie`, `${ENV_VAR}`
+  expansion, `chains.d/` per-chain files, per-node `headers`/`insecure_tls`/
+  `disable_vote`, `public_fallback` to chain-registry RPCs.
+- Removed in v3: the embedded dashboard — Prometheus metrics and structured
+  logs are the observability surface now.
 - YAML is parsed **strictly**: a misspelled key fails `validate` with the
   line number instead of silently disabling a feature.
 - Secrets: `${VAR}` expansion or whole-file age encryption
@@ -166,7 +167,7 @@ gofmt -l . && go vet ./...
 ```
 
 The test suite includes a fake CometBFT RPC + websocket server that drives the
-monitor end-to-end (block classification, alerts, dashboard state) without a
+monitor end-to-end (block classification, alerts, metrics) without a
 live chain.
 
 ```
@@ -177,7 +178,6 @@ internal/monitor     per-chain supervisor: sign machine, health, val info
 internal/alert       dedup/resolve/flap/reminder engine + notifiers
 internal/state       atomic JSON persistence
 internal/metrics     prometheus exporter
-internal/dashboard   embedded UI, ws fan-out, /healthz, optional basic auth
 internal/consensus   pubkey-any → consensus address derivation
 internal/bech32      self-contained BIP-0173 codec
 internal/protowire   minimal protobuf wire reader

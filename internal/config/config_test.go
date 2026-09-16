@@ -8,8 +8,6 @@ import (
 )
 
 const baseYAML = `
-enable_dashboard: true
-listen_port: 8080
 node_down_alert_minutes: 5
 prometheus_enabled: true
 prometheus_listen_port: 28660
@@ -41,8 +39,8 @@ func TestLoadFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.EnableDashboard || c.ListenPort != 8080 {
-		t.Errorf("dashboard fields: %+v", c)
+	if !c.PrometheusEnabled || c.PrometheusListenPort != 28660 {
+		t.Errorf("prometheus fields: %+v", c)
 	}
 	ch := c.Chains["cosmoshub"]
 	if ch == nil {
@@ -123,8 +121,8 @@ func TestValidateProblems(t *testing.T) {
 	if fatal, _ := Validate(&Config{}); !fatal {
 		t.Error("empty config not fatal")
 	}
-	// bad port → fatal
-	c := &Config{EnableDashboard: true, ListenPort: 99999, Chains: map[string]*ChainConfig{
+	// bad prometheus port → fatal
+	c := &Config{PrometheusEnabled: true, PrometheusListenPort: 99999, Chains: map[string]*ChainConfig{
 		"x": {ChainID: "x-1", ValoperAddress: "v"},
 	}}
 	if fatal, _ := Validate(c); !fatal {

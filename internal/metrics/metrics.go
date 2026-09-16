@@ -214,6 +214,10 @@ func (e *Exporter) ActiveAlerts(name, chainID string, n int) {
 func Serve(ctxDone <-chan struct{}, bind string, port int) error {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
 	srv := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", bind, port),
 		Handler:           mux,

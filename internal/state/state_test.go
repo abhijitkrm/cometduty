@@ -18,9 +18,6 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		Alarms: map[string]map[string]alert.StoredAlert{
 			"slack": {"k1": {When: time.Now().Truncate(time.Second), Alert: alert.Alert{Chain: "c", Key: "k1", Message: "m"}}},
 		},
-		Blocks: map[string]map[string][]int{
-			"cosmoshub": {"ABCD": {0, 1, 2, 3}},
-		},
 		NodesDown: map[string]map[string]time.Time{
 			"cosmoshub": {"https://rpc": time.Now().Truncate(time.Second)},
 		},
@@ -31,9 +28,6 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	got := s.Load()
 	if got.Alarms["slack"]["k1"].When.IsZero() {
 		t.Error("alarm not restored")
-	}
-	if len(got.Blocks["cosmoshub"]["ABCD"]) != 4 {
-		t.Error("block ring not restored")
 	}
 	// atomic write must not leave the tmp file
 	if _, err := os.Stat(p + ".tmp"); !os.IsNotExist(err) {

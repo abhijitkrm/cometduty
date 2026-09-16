@@ -3,14 +3,6 @@
 # for CometBFT chains (incl. Cosmos-EVM). Field names are compatible with
 # tenderduty v2 configs where practical.
 
-# ---- dashboard ----
-enable_dashboard: yes
-listen_port: 8888
-dashboard_bind: 0.0.0.0        # new: bind address
-# dashboard_user: admin        # optional basic auth
-# dashboard_pass: ${CD_DASH_PASS}
-hide_logs: no                  # suppress log feed + endpoint URLs (for public dashboards)
-
 # ---- global alert knobs ----
 node_down_alert_minutes: 3
 node_down_alert_severity: critical

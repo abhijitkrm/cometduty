@@ -65,7 +65,7 @@ type Engine struct {
 	sent map[string]map[string]*sentEntry
 	// flapped[destKind][alertKey] = last resolve time, for flap suppression
 	flapped map[string]map[string]time.Time
-	// active[chain] = set of open alert keys (drives the dashboard count)
+	// active[chain] = set of open alert keys (metrics + dedup state)
 	active map[string]map[string]time.Time
 }
 
@@ -193,22 +193,11 @@ func (e *Engine) HasOpen(key string) bool {
 	return false
 }
 
-// ActiveCount returns open alert count for a chain (dashboard badge).
+// ActiveCount returns open alert count for a chain (metrics + logs).
 func (e *Engine) ActiveCount(chain string) int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return len(e.active[chain])
-}
-
-// ActiveAlerts lists open alert keys for a chain.
-func (e *Engine) ActiveAlerts(chain string) []string {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	out := make([]string, 0, len(e.active[chain]))
-	for k := range e.active[chain] {
-		out = append(out, k)
-	}
-	return out
 }
 
 // StoredAlert is a sent alert plus when it went out — what the state file

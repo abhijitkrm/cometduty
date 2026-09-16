@@ -14,5 +14,5 @@ FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/cometduty /cometduty
 # config is expected at /config/config.yml (mount a volume or secret)
 USER nonroot:nonroot
-EXPOSE 8888 28686
+EXPOSE 28686
 ENTRYPOINT ["/cometduty", "-f", "/config/config.yml", "--state", "/data/state.json"]

@@ -14,13 +14,6 @@ import (
 
 // Config is the root configuration object.
 type Config struct {
-	// Dashboard settings. Field names preserved from tenderduty v2.
-	EnableDashboard bool   `yaml:"enable_dashboard"`
-	ListenPort      int    `yaml:"listen_port"`
-	BindAddress     string `yaml:"dashboard_bind"` // new: defaults to 0.0.0.0
-	HideLogs        bool   `yaml:"hide_logs"`
-	DashboardUser   string `yaml:"dashboard_user"` // new: basic auth, empty = no auth
-	DashboardPass   string `yaml:"dashboard_pass"` // new: basic auth password
 
 	// NodeDownMin is how long a node must be unreachable before alerting.
 	NodeDownMin      int    `yaml:"node_down_alert_minutes"`
@@ -194,7 +187,7 @@ type AlertConfig struct {
 // NodeConfig is one RPC endpoint.
 type NodeConfig struct {
 	URL         string            `yaml:"url"`
-	Name        string            `yaml:"name"` // friendly label; hides raw URL on dashboards
+	Name        string            `yaml:"name"` // friendly label shown instead of the raw URL
 	AlertIfDown bool              `yaml:"alert_if_down"`
 	InsecureTLS bool              `yaml:"insecure_tls"` // allow self-signed certs
 	Headers     map[string]string `yaml:"headers"`      // extra HTTP headers, e.g. Authorization
@@ -221,15 +214,6 @@ var pdOAuthRex = regexp.MustCompile(`[+_-]`)
 
 // Validate performs non-fatal and fatal checks. Returns (fatal, problems).
 func Validate(c *Config) (fatal bool, problems []string) {
-	if c.EnableDashboard {
-		if c.ListenPort < 1 || c.ListenPort > 65535 {
-			problems = append(problems, fmt.Sprintf("error: listen_port %d is not a valid TCP port", c.ListenPort))
-			fatal = true
-		}
-		if (c.DashboardUser == "") != (c.DashboardPass == "") {
-			problems = append(problems, "warn: dashboard_user and dashboard_pass should be set together for basic auth")
-		}
-	}
 	if c.PrometheusEnabled && (c.PrometheusListenPort < 1 || c.PrometheusListenPort > 65535) {
 		problems = append(problems, "error: prometheus_listen_port is not a valid TCP port")
 		fatal = true

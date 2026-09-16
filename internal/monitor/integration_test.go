@@ -153,30 +153,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Fatalf("timed out waiting for %s", what)
 }
 
-// recordingHub captures dashboard status updates.
-type recordingHub struct {
-	mu  sync.Mutex
-	got []*Status
-}
-
-func (h *recordingHub) PublishStatus(s *Status) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.got = append(h.got, s)
-}
-func (h *recordingHub) Log(any) {}
-func (h *recordingHub) count() int {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return len(h.got)
-}
-func (h *recordingHub) last() *Status {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.got[len(h.got)-1]
-}
-
-func testChain(t *testing.T, fn *fakeNode, consAddr []byte, hub *recordingHub) *Chain {
+func testChain(t *testing.T, fn *fakeNode, consAddr []byte) *Chain {
 	t.Helper()
 	valcons, err := bech32.Encode("testvalcons", consAddr)
 	if err != nil {
@@ -190,7 +167,7 @@ func testChain(t *testing.T, fn *fakeNode, consAddr []byte, hub *recordingHub) *
 		Alerts:          config.AlertConfig{ConsecutiveEnabled: true, ConsecutiveMissed: 3},
 	}
 	eng := alert.NewEngine(func(*alert.Alert) []alert.ResolvedDest { return nil }, time.Minute, 0)
-	c := NewChain("test", cc, func() *config.Config { return root }, eng, nil, hub)
+	c := NewChain("test", cc, func() *config.Config { return root }, eng, nil)
 	c.log = slog.Default()
 	return c
 }
@@ -217,8 +194,7 @@ func newBlockEvent(height int64, proposer, signerHex string, signed bool) string
 
 func TestEndToEndBlockFlow(t *testing.T) {
 	fn := newFakeNode(t, "test-1")
-	hub := &recordingHub{}
-	c := testChain(t, fn, testConsAddr, hub)
+	c := testChain(t, fn, testConsAddr)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -258,19 +234,19 @@ func TestEndToEndBlockFlow(t *testing.T) {
 	if tg.consec != 0 || tg.miss != 1 || tg.signs != 2 || tg.props != 1 {
 		t.Errorf("stats: miss=%d signs=%d props=%d consec=%d", tg.miss, tg.signs, tg.props, tg.consec)
 	}
-	if hub.count() != 3 {
-		t.Fatalf("hub got %d statuses", hub.count())
+	c.mu.Lock()
+	if c.lastHeight != 1003 {
+		t.Errorf("lastHeight %d want 1003", c.lastHeight)
 	}
-	last := hub.last()
-	if last.Height != 1003 || last.Moniker == "" {
-		t.Errorf("status: %+v", last)
+	c.mu.Unlock()
+	if tg.info.Moniker == "" {
+		t.Error("moniker empty after refresh")
 	}
 }
 
 func TestWSLoopStreamsBlocks(t *testing.T) {
 	fn := newFakeNode(t, "test-1")
-	hub := &recordingHub{}
-	c := testChain(t, fn, testConsAddr, hub)
+	c := testChain(t, fn, testConsAddr)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -295,12 +271,11 @@ func TestWSLoopStreamsBlocks(t *testing.T) {
 	})
 	fn.pushBlock(newBlockEvent(1001, "DEADBEEF", testConsHex(), true))
 	fn.pushBlock(newBlockEvent(1002, "DEADBEEF", testConsHex(), false))
-	waitFor(t, "blocks handled", func() bool { return hub.count() >= 2 })
-
-	last := hub.last()
-	if last.Height != 1002 {
-		t.Errorf("height %d want 1002", last.Height)
-	}
+	waitFor(t, "blocks handled", func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return c.lastHeight == 1002
+	})
 	tg := c.targets[0]
 	if tg.miss != 1 || tg.signs != 1 {
 		t.Errorf("stats: miss=%d signs=%d", tg.miss, tg.signs)
@@ -316,8 +291,7 @@ func TestWSLoopStreamsBlocks(t *testing.T) {
 
 func TestPickClientRejectsWrongChain(t *testing.T) {
 	fn := newFakeNode(t, "different-9")
-	hub := &recordingHub{}
-	c := testChain(t, fn, testConsAddr, hub)
+	c := testChain(t, fn, testConsAddr)
 	if err := c.pickClient(context.Background()); err == nil {
 		t.Error("wrong chain-id accepted")
 	}

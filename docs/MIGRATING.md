@@ -9,8 +9,7 @@ the new knobs.
 | v2 | cometduty | notes |
 |---|---|---|
 | `enabled` (top level) | — | removed; the daemon only runs when started |
-| `listen_port` | `listen_port` | unchanged; add `dashboard_bind` to restrict |
-| `hide_logs` | `hide_logs` | unchanged; also redacts endpoint URLs in status API |
+| `enable_dashboard` / `listen_port` / `hide_logs` / `dashboard_*` | — | **removed** — the built-in UI is gone in v3; use Prometheus metrics + logs, or point a frontend at your monitoring stack |
 | `node_down_alert_minutes` | `node_down_alert_minutes` | unchanged |
 | `prometheus_enabled` / `prometheus_listen_port` | same + `prometheus_bind` | unchanged |
 | `alerts.consecutive_missed` etc. | same | unchanged |
@@ -25,7 +24,7 @@ the new knobs.
   mention strings) and are now actually delivered.
 - Custom AES encryption — replaced by `age` passphrase encryption
   (`cometduty encrypt`, `--password` / `PASSWORD`). Re-encrypt remote configs.
-- Textile broadcast hub — the dashboard feed is internal now.
+- The embedded dashboard/UI — removed in v3 (Prometheus metrics and structured logs are the observability surface).
 
 ## New
 
@@ -37,7 +36,6 @@ the new knobs.
 - `flap_suppression_minutes`, `reminder_minutes`, `resolve_alerts_on_start`
   (sends resolve notifications for alerts that were open when the process
   stopped — cleans up PagerDuty/Opsgenie incidents across restarts).
-- `dashboard_user`/`dashboard_pass` — HTTP basic auth for the dashboard.
 - `node.headers`, `node.insecure_tls`, `node.disable_vote`, `node.name`.
 - `public_fallback` — use chain-registry public RPCs when all nodes fail.
 - `chains.d/` directory of per-chain files (`--chains-dir`).

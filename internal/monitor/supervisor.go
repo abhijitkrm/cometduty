@@ -15,7 +15,6 @@ type Supervisor struct {
 	cfg       *config.Config
 	eng       *alert.Engine
 	met       MetricsSink
-	hub       Hub
 	parentCtx context.Context
 
 	mu     sync.Mutex
@@ -29,8 +28,8 @@ type chainRunner struct {
 
 // NewSupervisor builds the supervisor and wires the engine's destination
 // resolver to the (reloadable) config.
-func NewSupervisor(cfg *config.Config, eng *alert.Engine, met MetricsSink, hub Hub) *Supervisor {
-	s := &Supervisor{cfg: cfg, eng: eng, met: met, hub: hub, chains: map[string]*chainRunner{}}
+func NewSupervisor(cfg *config.Config, eng *alert.Engine, met MetricsSink) *Supervisor {
+	s := &Supervisor{cfg: cfg, eng: eng, met: met, chains: map[string]*chainRunner{}}
 	return s
 }
 
@@ -135,7 +134,7 @@ func (s *Supervisor) startLocked(ctx context.Context, name string, cc *config.Ch
 		defer s.mu.Unlock()
 		return s.cfg
 	}
-	ch := NewChain(name, cc, rootFn, s.eng, s.met, s.hub)
+	ch := NewChain(name, cc, rootFn, s.eng, s.met)
 	cctx, cancel := context.WithCancel(ctx)
 	s.chains[name] = &chainRunner{chain: ch, cancel: cancel}
 	go ch.Run(cctx)
@@ -175,28 +174,6 @@ func (s *Supervisor) Stop() {
 	}
 }
 
-// SnapshotBlocks returns the per-target block rings for state persistence:
-// map[chain][valcons]ring.
-func (s *Supervisor) SnapshotBlocks() map[string]map[string][]int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := map[string]map[string][]int{}
-	for name, r := range s.chains {
-		r.chain.mu.Lock()
-		for _, t := range r.chain.targets {
-			if t.info == nil {
-				continue
-			}
-			if out[name] == nil {
-				out[name] = map[string][]int{}
-			}
-			out[name][t.info.Valcons] = append([]int{}, t.blocks...)
-		}
-		r.chain.mu.Unlock()
-	}
-	return out
-}
-
 // SnapshotNodesDown returns map[chain][nodeURL]downSince for down nodes.
 func (s *Supervisor) SnapshotNodesDown() map[string]map[string]time.Time {
 	s.mu.Lock()
@@ -215,31 +192,4 @@ func (s *Supervisor) SnapshotNodesDown() map[string]map[string]time.Time {
 		r.chain.mu.Unlock()
 	}
 	return out
-}
-
-// RestoreBlocks loads saved rings into targets (keyed by valcons or by order).
-func (s *Supervisor) RestoreBlocks(blocks map[string]map[string][]int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for name, perVal := range blocks {
-		r, ok := s.chains[name]
-		if !ok {
-			continue
-		}
-		r.chain.mu.Lock()
-		i := 0
-		for _, t := range r.chain.targets {
-			if t.info != nil && perVal[t.info.Valcons] != nil {
-				copy(t.blocks, perVal[t.info.Valcons])
-			} else if i < len(perVal) {
-				// order-based fallback for restored state before valinfo loads
-				for _, v := range perVal {
-					copy(t.blocks, v)
-					break
-				}
-			}
-			i++
-		}
-		r.chain.mu.Unlock()
-	}
 }

@@ -16,32 +16,6 @@ import (
 	"github.com/abhijitkrm/cometduty/internal/rpc"
 )
 
-// Hub is the subset of the dashboard the monitor needs.
-type Hub interface {
-	PublishStatus(s *Status)
-	Log(e any)
-}
-
-// Status is the dashboard/JSON view of one monitored validator.
-type Status struct {
-	MsgType      string `json:"msgType"`
-	Name         string `json:"name"`
-	ChainID      string `json:"chain_id"`
-	Moniker      string `json:"moniker"`
-	Validator    string `json:"validator"` // valcons or label, disambiguates multi-val chains
-	Bonded       bool   `json:"bonded"`
-	Jailed       bool   `json:"jailed"`
-	Tombstoned   bool   `json:"tombstoned"`
-	Missed       int64  `json:"missed"`
-	Window       int64  `json:"window"`
-	Nodes        int    `json:"nodes"`
-	HealthyNodes int    `json:"healthy_nodes"`
-	ActiveAlerts int    `json:"active_alerts"`
-	Height       int64  `json:"height"`
-	LastError    string `json:"last_error"`
-	Blocks       []int  `json:"blocks"`
-}
-
 // MetricsSink is what the monitor needs from the prometheus exporter.
 type MetricsSink interface {
 	BlockResult(name, chainID, validator, moniker string, st SignState, consecutive int64)
@@ -69,11 +43,9 @@ type nodeState struct {
 
 // Target is one validator being watched on a chain.
 type Target struct {
-	vc     config.ValidatorConfig
-	info   *ValInfo
-	prev   *ValInfo
-	vt     *voteTracker
-	blocks []int
+	vc   config.ValidatorConfig
+	info *ValInfo
+	vt   *voteTracker
 
 	signs, props, miss, pvMiss, pcMiss, consec int64
 
@@ -89,7 +61,6 @@ type Chain struct {
 	rootFn func() *config.Config // live global config (survives reload)
 	eng    *alert.Engine
 	met    MetricsSink
-	hub    Hub
 	log    *slog.Logger
 
 	mu        sync.Mutex
@@ -109,18 +80,15 @@ type Chain struct {
 	lastSlashingAt time.Time
 }
 
-const blockRing = 512
-
 // NewChain builds a monitor for one chain. rootFn must return the current
 // global config — it is evaluated per-use so hot reloads propagate.
-func NewChain(name string, cc *config.ChainConfig, rootFn func() *config.Config, eng *alert.Engine, met MetricsSink, hub Hub) *Chain {
+func NewChain(name string, cc *config.ChainConfig, rootFn func() *config.Config, eng *alert.Engine, met MetricsSink) *Chain {
 	c := &Chain{
 		name:       name,
 		cfg:        cc,
 		rootFn:     rootFn,
 		eng:        eng,
 		met:        met,
-		hub:        hub,
 		log:        slog.With("chain", name, "chain_id", cc.ChainID),
 		byAddr:     map[string]*Target{},
 		slashingOK: true,
@@ -141,10 +109,6 @@ func (c *Chain) rebuildLocked(cc *config.ChainConfig) {
 	c.byAddr = map[string]*Target{}
 	for _, vc := range cc.ValidatorTargets() {
 		t := &Target{vc: vc, vt: newVoteTracker()}
-		t.blocks = make([]int, blockRing)
-		for i := range t.blocks {
-			t.blocks[i] = -1
-		}
 		c.targets = append(c.targets, t)
 	}
 }
@@ -352,7 +316,6 @@ func (c *Chain) refreshValInfo(ctx context.Context, first bool) {
 		if t.info == nil {
 			t.info = &ValInfo{}
 		}
-		t.prev = t.info
 		ni := &ValInfo{
 			Moniker: moniker, Bonded: bonded, Jailed: jailed,
 			ConsAddr: addr, ConsHex: hexAddr, Valcons: valcons,

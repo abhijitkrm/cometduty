@@ -128,7 +128,7 @@ func (c *Chain) handleVote(raw []byte) {
 }
 
 // handleBlock classifies the commit for every monitored validator, updates
-// stats/rings/metrics, and pushes a dashboard status.
+// stats and metrics.
 func (c *Chain) handleBlock(raw []byte) {
 	b, err := decodeBlock(raw)
 	if err != nil {
@@ -158,7 +158,6 @@ func (c *Chain) handleBlock(raw []byte) {
 			// still record, but as unknown so the grid shows grey not red
 			st = SignUnknown
 		}
-		t.blocks = append([]int{int(st)}, t.blocks[:len(t.blocks)-1]...)
 		switch st {
 		case SignMissed:
 			t.miss++
@@ -182,8 +181,6 @@ func (c *Chain) handleBlock(raw []byte) {
 		missedNow := st < SignSigned && bonded
 		moniker := t.info.Moniker
 		valcons := t.info.Valcons
-		missed, window := t.info.Missed, t.info.Window
-		tomb, jailed := t.info.Tombstoned, t.info.Jailed
 		consec := t.consec
 		c.mu.Unlock()
 
@@ -195,7 +192,6 @@ func (c *Chain) handleBlock(raw []byte) {
 			c.met.BlockResult(c.name, chainID, valcons, moniker, st, consec)
 			c.met.SignatureRatio(c.name, chainID, ratio)
 		}
-		c.publishStatus(t, height, missedNow, st, moniker, valcons, bonded, missed, window, tomb, jailed)
 	}
 	if c.met != nil {
 		c.met.LastBlock(c.name, chainID, height, sincePrev)
@@ -203,58 +199,4 @@ func (c *Chain) handleBlock(raw []byte) {
 	if height%20 == 0 {
 		c.log.Info("block", "height", height)
 	}
-}
-
-func (c *Chain) publishStatus(t *Target, height int64, missedNow bool, st SignState, moniker, valcons string, bonded bool, missed, window int64, tomb, jailed bool) {
-	if c.hub == nil {
-		return
-	}
-	hideLogs := c.rootFn().HideLogs // before c.mu — lock ordering (s.mu → c.mu)
-	c.mu.Lock()
-	nodes := len(c.nodes)
-	healthy := 0
-	var errMsgs string
-	for _, n := range c.nodes {
-		if !n.down {
-			healthy++
-		} else if !hideLogs && n.lastMsg != "" {
-			errMsgs += "\n - " + n.cfg.URL + ": " + n.lastMsg
-		}
-	}
-	blocks := append([]int{}, t.blocks...)
-	chainID := c.cfg.ChainID
-	c.mu.Unlock()
-
-	info := ""
-	for _, k := range c.eng.ActiveAlerts(c.name) {
-		info += "🚨 " + k + "\n"
-	}
-	if missedNow {
-		info += fmt.Sprintf("missed block %d (%s)\n", height-1, st)
-	}
-	if tomb {
-		info += "validator is tombstoned\n"
-	} else if jailed {
-		info += "validator is jailed\n"
-	}
-	info += errMsgs
-
-	c.hub.PublishStatus(&Status{
-		MsgType:      "status",
-		Name:         c.name,
-		ChainID:      chainID,
-		Moniker:      moniker,
-		Validator:    valcons,
-		Bonded:       bonded,
-		Jailed:       jailed,
-		Tombstoned:   tomb,
-		Missed:       missed,
-		Window:       window,
-		Nodes:        nodes,
-		HealthyNodes: healthy,
-		ActiveAlerts: c.eng.ActiveCount(c.name),
-		Height:       height,
-		LastError:    info,
-		Blocks:       blocks,
-	})
 }

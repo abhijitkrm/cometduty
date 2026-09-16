@@ -19,7 +19,6 @@ import (
 // Snapshot is the serialized state.
 type Snapshot struct {
 	Alarms    map[string]map[string]alert.StoredAlert `json:"alarms"`     // dest kind -> key -> sent alert
-	Blocks    map[string]map[string][]int             `json:"blocks"`     // chain -> valcons -> ring
 	NodesDown map[string]map[string]time.Time         `json:"nodes_down"` // chain -> url -> since
 }
 
