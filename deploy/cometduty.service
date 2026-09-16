@@ -1,0 +1,25 @@
+[Unit]
+Description=cometduty — CometBFT validator monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cometduty
+Group=cometduty
+ExecStart=/usr/local/bin/cometduty -f /etc/cometduty/config.yml --state /var/lib/cometduty/state.json --chains-dir /etc/cometduty/chains.d
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+# secrets come from the environment file rather than the unit
+EnvironmentFile=-/etc/cometduty/env
+
+# hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/cometduty
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,130 @@
+---
+# cometduty example configuration — a community maintained missed-block monitor
+# for CometBFT chains (incl. Cosmos-EVM). Field names are compatible with
+# tenderduty v2 configs where practical.
+
+# ---- dashboard ----
+enable_dashboard: yes
+listen_port: 8888
+dashboard_bind: 0.0.0.0        # new: bind address
+# dashboard_user: admin        # optional basic auth
+# dashboard_pass: ${CD_DASH_PASS}
+hide_logs: no                  # suppress log feed + endpoint URLs (for public dashboards)
+
+# ---- global alert knobs ----
+node_down_alert_minutes: 3
+node_down_alert_severity: critical
+flap_suppression_minutes: 10   # re-alerts sooner than this after a resolve are suppressed
+reminder_minutes: 0            # >0 re-notifies on still-open alerts at this interval
+
+# ---- prometheus ----
+prometheus_enabled: yes
+prometheus_listen_port: 28686
+prometheus_bind: 0.0.0.0
+
+# ---- notifiers (global) ----
+pagerduty:
+  enabled: no
+  api_key: ${PD_ROUTING_KEY}   # V2 events API routing key
+  default_severity: error
+
+discord:
+  enabled: no
+  webhook: https://discord.com/api/webhooks/xxx/yyy
+  mentions: ["<@123456789>"]
+
+telegram:
+  enabled: no
+  api_key: "555:AAAA"          # from @BotFather
+  channel: "-666666666"        # group/channel id
+  mentions: ["@oncall"]
+
+slack:
+  enabled: no
+  webhook: https://hooks.slack.com/services/AAA/BBB
+  mentions: ["<!channel>"]
+
+# generic JSON webhook — body is a Go template over the alert object:
+#   {{.Chain}} {{.ChainID}} {{.Severity}} {{.Message}} {{.Moniker}} {{.Valcons}}
+#   {{.Resolved}} {{.Time}} {{.Fields.endpoint}} etc.
+webhook:
+  enabled: no
+  url: https://example.com/hook
+  # template_body: '{"text":"{{.Chain}}: {{.Message}}"}'
+  # headers: {Authorization: "Bearer x"}
+
+ntfy:
+  enabled: no
+  url: https://ntfy.sh         # or your self-hosted instance
+  topic: my-validator-alerts
+  priority: high
+  # token: tk_xxx
+
+opsgenie:
+  enabled: no
+  api_key: ${OPSGENIE_KEY}
+  # api_url: https://api.eu.opsgenie.com
+  # team: sre
+
+# dead-man's-switch ping for the monitor itself (healthchecks.io, etc.)
+healthcheck:
+  enabled: no
+  ping_url: https://hc-ping.com/aaaa-bbbb
+  ping_rate: 60                # seconds
+
+# ---- chains ----
+# chain-specific files can also live in chains.d/<Friendly Name>.yml
+chains:
+  "Osmosis":
+    chain_id: osmosis-1
+    # single validator shorthand:
+    valoper_address: osmovaloper1xxxx...
+    # OR a direct consensus address (ICS consumer chains etc.):
+    # valcons_override: osmovalcons1xxxx...
+    # cons_prefix: osmovalcons   # only needed when derivation fails
+    # label: main
+    # multi-validator on one chain:
+    # validators:
+    #   - valoper_address: osmovaloper1aaa...
+    #     label: primary
+    #   - valoper_address: osmovaloper1bbb...
+    #     label: backup
+    # slashing_enabled: false    # chains without x/slashing (auto-detected anyway)
+    public_fallback: no        # fall back to chain-registry public RPCs
+
+    alerts:
+      stalled_enabled: yes
+      stalled_minutes: 10
+
+      consecutive_enabled: yes
+      consecutive_missed: 5
+      consecutive_priority: critical
+
+      percentage_enabled: no
+      percentage_missed: 10
+      percentage_priority: warning
+
+      alert_if_inactive: yes
+      alert_if_no_servers: yes
+
+      lag_enabled: yes         # new: node falls behind head
+      lag_blocks: 100
+
+      # per-chain destination overrides (enabled + credentials):
+      pagerduty: {enabled: yes}
+      discord:   {enabled: yes}
+      telegram:  {enabled: no}
+      slack:     {enabled: no}
+      webhook:   {enabled: no}
+      ntfy:      {enabled: no}
+      opsgenie:  {enabled: no}
+
+    nodes:
+      - url: tcp://localhost:26657
+        name: local sentry      # shown instead of the raw URL
+        alert_if_down: yes
+      - url: https://rpc2.example.com:443
+        alert_if_down: no
+        # insecure_tls: yes      # self-signed certs
+        # headers: {Authorization: "Bearer ${RPC_TOKEN}"}
+      # unix:///var/run/comet.sock  # UDS is supported for local nodes

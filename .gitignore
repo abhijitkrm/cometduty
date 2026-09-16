@@ -1,0 +1,17 @@
+# binaries
+cometduty
+dist/
+*.test
+
+# local config & secrets
+config.yml
+config.yml.age
+*.dec.yml
+chains.d/
+.cometduty-state.json*
+
+# os/editor cruft
+.DS_Store
+*.swp
+.idea/
+.vscode/

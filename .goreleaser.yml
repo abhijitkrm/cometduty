@@ -1,0 +1,52 @@
+version: 2
+
+project_name: cometduty
+
+builds:
+  - id: cometduty
+    main: ./cmd/cometduty
+    binary: cometduty
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [LICENSE, README.md, docs/**]
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  use: github-native
+
+dockers:
+  - image_templates:
+      - "ghcr.io/cometduty/cometduty:{{ .Version }}-amd64"
+      - "ghcr.io/cometduty/cometduty:latest-amd64"
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+  - image_templates:
+      - "ghcr.io/cometduty/cometduty:{{ .Version }}-arm64"
+      - "ghcr.io/cometduty/cometduty:latest-arm64"
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+
+docker_manifests:
+  - name_template: "ghcr.io/cometduty/cometduty:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/cometduty/cometduty:{{ .Version }}-amd64"
+      - "ghcr.io/cometduty/cometduty:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/cometduty/cometduty:latest"
+    image_templates:
+      - "ghcr.io/cometduty/cometduty:latest-amd64"
+      - "ghcr.io/cometduty/cometduty:latest-arm64"

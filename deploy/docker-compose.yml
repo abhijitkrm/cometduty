@@ -1,0 +1,18 @@
+services:
+  cometduty:
+    image: ghcr.io/cometduty/cometduty:latest
+    restart: unless-stopped
+    volumes:
+      - ./config.yml:/config/config.yml:ro
+      - ./chains.d:/etc/cometduty/chains.d:ro   # optional per-chain files
+      - cometduty-data:/data
+    ports:
+      - "8888:8888"     # dashboard
+      - "28686:28686"   # prometheus
+    environment:
+      # referenced from config.yml via ${VAR} expansion
+      - PD_ROUTING_KEY=${PD_ROUTING_KEY:-}
+      - TG_BOT_KEY=${TG_BOT_KEY:-}
+
+volumes:
+  cometduty-data:
