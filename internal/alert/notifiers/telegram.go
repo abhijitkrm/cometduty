@@ -9,8 +9,8 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
-	"github.com/cometduty/cometduty/internal/alert"
-	"github.com/cometduty/cometduty/internal/config"
+	"github.com/abhijitkrm/cometduty/internal/alert"
+	"github.com/abhijitkrm/cometduty/internal/config"
 )
 
 // Telegram posts via a bot to a channel/group.

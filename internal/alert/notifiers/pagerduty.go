@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/cometduty/cometduty/internal/alert"
-	"github.com/cometduty/cometduty/internal/config"
+	"github.com/abhijitkrm/cometduty/internal/alert"
+	"github.com/abhijitkrm/cometduty/internal/config"
 )
 
 // PagerDuty uses the V2 Events API directly — a single POST, no SDK needed.

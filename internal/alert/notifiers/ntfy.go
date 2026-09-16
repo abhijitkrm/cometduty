@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cometduty/cometduty/internal/alert"
-	"github.com/cometduty/cometduty/internal/config"
+	"github.com/abhijitkrm/cometduty/internal/alert"
+	"github.com/abhijitkrm/cometduty/internal/config"
 )
 
 // Ntfy posts to an ntfy.sh-compatible topic (public or self-hosted).

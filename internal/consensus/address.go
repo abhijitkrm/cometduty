@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cometduty/cometduty/internal/protowire"
+	"github.com/abhijitkrm/cometduty/internal/protowire"
 )
 
 // Pubkey type URLs seen in the wild. All of these are `message PubKey { bytes

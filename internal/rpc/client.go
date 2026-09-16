@@ -199,7 +199,7 @@ func (c *Client) ABCIQuery(ctx context.Context, path string, data []byte) (*ABCI
 	}
 	params := map[string]any{
 		"path":  path,
-		"data":  fmt.Sprintf("0x%X", data),
+		"data":  fmt.Sprintf("%X", data), // HexBytes: uppercase hex, NO 0x prefix
 		"prove": false,
 	}
 	if err := c.call(ctx, "abci_query", params, &r); err != nil {

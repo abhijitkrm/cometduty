@@ -47,7 +47,7 @@ before you rely on it.
 ## Quick start
 
 ```sh
-go install github.com/cometduty/cometduty/cmd/cometduty@latest
+go install github.com/abhijitkrm/cometduty/cmd/cometduty@latest
 
 cometduty example-config > config.yml
 $EDITOR config.yml
@@ -56,11 +56,11 @@ cometduty test-alert webhook -f config.yml   # optional: verify a destination
 cometduty -f config.yml                      # run (or just `cometduty`)
 ```
 
-Docker (multi-arch images are published to `ghcr.io/cometduty/cometduty`):
+Docker (multi-arch images are published to `ghcr.io/abhijitkrm/cometduty`):
 
 ```sh
 docker run -v $PWD/config.yml:/config/config.yml:ro -v cd-data:/data \
-  -p 8888:8888 ghcr.io/cometduty/cometduty:latest
+  -p 8888:8888 ghcr.io/abhijitkrm/cometduty:latest
 ```
 
 The dashboard listens on `:8888` by default; Prometheus metrics on `:28686/metrics`.

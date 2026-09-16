@@ -8,8 +8,8 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/cometduty/cometduty/internal/alert"
-	"github.com/cometduty/cometduty/internal/config"
+	"github.com/abhijitkrm/cometduty/internal/alert"
+	"github.com/abhijitkrm/cometduty/internal/config"
 )
 
 // Webhook is a generic JSON webhook whose body is a Go text/template rendered

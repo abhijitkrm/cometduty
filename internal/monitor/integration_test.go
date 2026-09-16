@@ -14,9 +14,9 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/cometduty/cometduty/internal/alert"
-	"github.com/cometduty/cometduty/internal/bech32"
-	"github.com/cometduty/cometduty/internal/config"
+	"github.com/abhijitkrm/cometduty/internal/alert"
+	"github.com/abhijitkrm/cometduty/internal/bech32"
+	"github.com/abhijitkrm/cometduty/internal/config"
 )
 
 // fakeNode is a minimal CometBFT endpoint: JSON-RPC over POST / and an event

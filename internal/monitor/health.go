@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cometduty/cometduty/internal/alert"
-	"github.com/cometduty/cometduty/internal/rpc"
+	"github.com/abhijitkrm/cometduty/internal/alert"
+	"github.com/abhijitkrm/cometduty/internal/rpc"
 )
 
 // healthLoop periodically probes every configured node's /status: liveness,
@@ -311,9 +311,13 @@ func (c *Chain) alert(chainID string, tg *Target, key string, resolved bool, sev
 		a.Scoped = tg.vc.Alerts
 	}
 	if resolved {
-		c.log.Info("resolve", "key", key)
+		if c.eng.HasOpen(key) {
+			c.log.Info("resolve", "key", key)
+		}
 	} else {
 		c.log.Warn("alert raised", "key", key, "msg", msg)
 	}
+	// Always dispatch resolves: the engine clears the active-set and delivers
+	// resolve notices only to destinations that actually got the raise.
 	go c.eng.Dispatch(context.Background(), a)
 }

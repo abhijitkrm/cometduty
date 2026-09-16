@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/cometduty/cometduty/internal/broker"
+	"github.com/abhijitkrm/cometduty/internal/broker"
 )
 
 // Entry is one formatted log line for the dashboard feed.

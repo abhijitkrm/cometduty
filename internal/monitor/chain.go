@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cometduty/cometduty/internal/alert"
-	"github.com/cometduty/cometduty/internal/config"
-	"github.com/cometduty/cometduty/internal/rpc"
+	"github.com/abhijitkrm/cometduty/internal/alert"
+	"github.com/abhijitkrm/cometduty/internal/config"
+	"github.com/abhijitkrm/cometduty/internal/rpc"
 )
 
 // Hub is the subset of the dashboard the monitor needs.
@@ -50,7 +50,7 @@ type MetricsSink interface {
 	SignatureRatio(name, chainID string, ratio float64)
 	NodeHealth(name, chainID, endpoint, label string, downSeconds, lagBlocks float64, peers float64)
 	NodeCount(name, chainID string, total, unhealthy int)
-	Window(name, chainID, validator string, missed, window int64)
+	Window(name, chainID, validator, moniker string, missed, window int64)
 	ActiveAlerts(name, chainID string, n int)
 }
 
@@ -401,7 +401,7 @@ func (c *Chain) refreshValInfo(ctx context.Context, first bool) {
 		}
 		c.mu.Lock()
 		if c.met != nil {
-			c.met.Window(c.name, c.cfg.ChainID, valcons, t.info.Missed, t.info.Window)
+			c.met.Window(c.name, c.cfg.ChainID, valcons, t.info.Moniker, t.info.Missed, t.info.Window)
 		}
 		c.mu.Unlock()
 	}

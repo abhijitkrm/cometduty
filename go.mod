@@ -1,4 +1,4 @@
-module github.com/cometduty/cometduty
+module github.com/abhijitkrm/cometduty
 
 go 1.26.5
 

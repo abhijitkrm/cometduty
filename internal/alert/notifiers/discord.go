@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cometduty/cometduty/internal/alert"
-	"github.com/cometduty/cometduty/internal/config"
+	"github.com/abhijitkrm/cometduty/internal/alert"
+	"github.com/abhijitkrm/cometduty/internal/config"
 )
 
 // Discord posts to a channel webhook with embeds.

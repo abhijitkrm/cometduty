@@ -17,9 +17,9 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/cometduty/cometduty/internal/broker"
-	"github.com/cometduty/cometduty/internal/logging"
-	"github.com/cometduty/cometduty/internal/monitor"
+	"github.com/abhijitkrm/cometduty/internal/broker"
+	"github.com/abhijitkrm/cometduty/internal/logging"
+	"github.com/abhijitkrm/cometduty/internal/monitor"
 )
 
 //go:embed static

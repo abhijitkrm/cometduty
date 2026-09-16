@@ -1,6 +1,6 @@
 services:
   cometduty:
-    image: ghcr.io/cometduty/cometduty:latest
+    image: ghcr.io/abhijitkrm/cometduty:latest
     restart: unless-stopped
     volumes:
       - ./config.yml:/config/config.yml:ro

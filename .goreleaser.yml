@@ -25,16 +25,16 @@ changelog:
 
 dockers:
   - image_templates:
-      - "ghcr.io/cometduty/cometduty:{{ .Version }}-amd64"
-      - "ghcr.io/cometduty/cometduty:latest-amd64"
+      - "ghcr.io/abhijitkrm/cometduty:{{ .Version }}-amd64"
+      - "ghcr.io/abhijitkrm/cometduty:latest-amd64"
     dockerfile: Dockerfile
     use: buildx
     build_flag_templates:
       - "--platform=linux/amd64"
       - "--label=org.opencontainers.image.version={{.Version}}"
   - image_templates:
-      - "ghcr.io/cometduty/cometduty:{{ .Version }}-arm64"
-      - "ghcr.io/cometduty/cometduty:latest-arm64"
+      - "ghcr.io/abhijitkrm/cometduty:{{ .Version }}-arm64"
+      - "ghcr.io/abhijitkrm/cometduty:latest-arm64"
     dockerfile: Dockerfile
     use: buildx
     build_flag_templates:
@@ -42,11 +42,11 @@ dockers:
       - "--label=org.opencontainers.image.version={{.Version}}"
 
 docker_manifests:
-  - name_template: "ghcr.io/cometduty/cometduty:{{ .Version }}"
+  - name_template: "ghcr.io/abhijitkrm/cometduty:{{ .Version }}"
     image_templates:
-      - "ghcr.io/cometduty/cometduty:{{ .Version }}-amd64"
-      - "ghcr.io/cometduty/cometduty:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/cometduty/cometduty:latest"
+      - "ghcr.io/abhijitkrm/cometduty:{{ .Version }}-amd64"
+      - "ghcr.io/abhijitkrm/cometduty:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/abhijitkrm/cometduty:latest"
     image_templates:
-      - "ghcr.io/cometduty/cometduty:latest-amd64"
-      - "ghcr.io/cometduty/cometduty:latest-arm64"
+      - "ghcr.io/abhijitkrm/cometduty:latest-amd64"
+      - "ghcr.io/abhijitkrm/cometduty:latest-arm64"

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cometduty/cometduty/internal/config"
+	"github.com/abhijitkrm/cometduty/internal/config"
 )
 
 // Alert is a single notification event.
@@ -178,6 +178,19 @@ func (e *Engine) shouldSend(kind string, a *Alert) bool {
 	e.sent[kind][a.Key] = &sentEntry{Alert: *a, When: time.Now()}
 	slog.Info("new alert", "chain", a.Chain, "dest", kind, "key", a.Key, "msg", a.Message)
 	return true
+}
+
+// HasOpen reports whether any destination still holds an open alert for key.
+// Callers use it to skip pointless resolve dispatches (and log noise).
+func (e *Engine) HasOpen(key string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, m := range e.sent {
+		if _, ok := m[key]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // ActiveCount returns open alert count for a chain (dashboard badge).

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/cometduty/cometduty/internal/rpc"
+	"github.com/abhijitkrm/cometduty/internal/rpc"
 )
 
 const (

@@ -10,9 +10,9 @@ import (
 	stakingv1beta1 "cosmossdk.io/api/cosmos/staking/v1beta1"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/cometduty/cometduty/internal/bech32"
-	"github.com/cometduty/cometduty/internal/consensus"
-	"github.com/cometduty/cometduty/internal/rpc"
+	"github.com/abhijitkrm/cometduty/internal/bech32"
+	"github.com/abhijitkrm/cometduty/internal/consensus"
+	"github.com/abhijitkrm/cometduty/internal/rpc"
 )
 
 // ValInfo is the periodically-refreshed on-chain state for one validator.

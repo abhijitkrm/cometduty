@@ -14,7 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/cometduty/cometduty/internal/monitor"
+	"github.com/abhijitkrm/cometduty/internal/monitor"
 )
 
 var chainLabels = []string{"name", "chain_id", "validator", "moniker"}
@@ -181,8 +181,8 @@ func (e *Exporter) SignatureRatio(name, chainID string, ratio float64) {
 }
 
 // Window implements monitor.MetricsSink.
-func (e *Exporter) Window(name, chainID, validator string, missed, window int64) {
-	l := prometheus.Labels{"name": name, "chain_id": chainID, "validator": validator}
+func (e *Exporter) Window(name, chainID, validator, moniker string, missed, window int64) {
+	l := prometheus.Labels{"name": name, "chain_id": chainID, "validator": validator, "moniker": moniker}
 	e.windowMissed.With(l).Set(float64(missed))
 	e.windowSize.With(l).Set(float64(window))
 	if window > 0 {

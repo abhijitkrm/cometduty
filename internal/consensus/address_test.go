@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"testing"
 
-	"github.com/cometduty/cometduty/internal/protowire"
+	"github.com/abhijitkrm/cometduty/internal/protowire"
 )
 
 var testKey = []byte{

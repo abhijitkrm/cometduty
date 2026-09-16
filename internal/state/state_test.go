@@ -3,7 +3,7 @@ package state
 import (
 	"os"
 
-	"github.com/cometduty/cometduty/internal/alert"
+	"github.com/abhijitkrm/cometduty/internal/alert"
 	"path/filepath"
 	"testing"
 	"time"

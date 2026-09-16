@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/cometduty/cometduty/internal/alert"
+	"github.com/abhijitkrm/cometduty/internal/alert"
 )
 
 // Snapshot is the serialized state.
