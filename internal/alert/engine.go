@@ -56,6 +56,7 @@ type Engine struct {
 
 	notifiers map[string]Notifier
 	resolve   func(a *Alert) []ResolvedDest // supplied by the supervisor
+	observe   func(NotifyResult)            // optional: metrics/history hooks
 
 	flapMinutes   time.Duration
 	remindMinutes time.Duration
@@ -72,6 +73,15 @@ type Engine struct {
 type sentEntry struct {
 	Alert Alert
 	When  time.Time
+}
+
+// NotifyResult is reported after every notifier delivery attempt, including
+// retries. Observability hooks (metrics counters, JSONL history) consume it.
+type NotifyResult struct {
+	Dest     string
+	Alert    Alert
+	Err      error
+	Attempts int
 }
 
 // NewEngine builds an engine. resolveFn maps an alert to its concrete
@@ -95,6 +105,14 @@ func (e *Engine) Register(n Notifier) { e.notifiers[n.Kind()] = n }
 // SetResolver installs the destination-resolution function. It is separate from
 // NewEngine because the resolver (the supervisor) needs the engine to exist.
 func (e *Engine) SetResolver(f func(*Alert) []ResolvedDest) { e.resolve = f }
+
+// SetObserver installs a delivery-result hook (metrics, alert history). Called
+// synchronously on the notifier goroutine — keep it cheap and non-blocking.
+func (e *Engine) SetObserver(f func(NotifyResult)) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.observe = f
+}
 
 // Dispatch routes an alert through dedup/flap logic and fires enabled
 // destinations asynchronously.
@@ -134,10 +152,29 @@ func (e *Engine) Dispatch(ctx context.Context, a Alert) {
 // fire invokes a notifier in the background with a timeout.
 func (e *Engine) fire(ctx context.Context, n Notifier, d ResolvedDest, a Alert) {
 	go func() {
-		cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		cctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 		defer cancel()
-		if err := n.Send(cctx, &a, d.Cfg); err != nil {
-			slog.Error("notification failed", "chain", a.Chain, "dest", d.Kind, "err", err)
+		err := n.Send(cctx, &a, d.Cfg)
+		attempts := 1
+		if err != nil {
+			// one bounded retry — most send failures are transient (5xx, timeouts)
+			select {
+			case <-cctx.Done():
+			case <-time.After(2 * time.Second):
+				if cctx.Err() == nil {
+					attempts++
+					err = n.Send(cctx, &a, d.Cfg)
+				}
+			}
+		}
+		if err != nil {
+			slog.Error("notification failed", "chain", a.Chain, "dest", d.Kind, "err", err, "attempts", attempts)
+		}
+		e.mu.Lock()
+		ob := e.observe
+		e.mu.Unlock()
+		if ob != nil {
+			ob(NotifyResult{Dest: d.Kind, Alert: a, Err: err, Attempts: attempts})
 		}
 	}()
 }

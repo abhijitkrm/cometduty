@@ -165,6 +165,20 @@ func (s *Supervisor) Reload(newCfg *config.Config) {
 	_ = old
 }
 
+// Ready reports whether every chain is observing blocks; reasons explain any
+// failure (one per unhealthy chain). Backs the /readyz endpoint.
+func (s *Supervisor) Ready() (bool, []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var reasons []string
+	for name, r := range s.chains {
+		if ok, why := r.chain.ready(); !ok {
+			reasons = append(reasons, name+": "+why)
+		}
+	}
+	return len(reasons) == 0, reasons
+}
+
 // Stop halts all chains.
 func (s *Supervisor) Stop() {
 	s.mu.Lock()

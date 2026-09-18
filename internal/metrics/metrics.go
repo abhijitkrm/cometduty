@@ -43,6 +43,8 @@ type Exporter struct {
 	endpointDown   *prometheus.GaugeVec
 	endpointLag    *prometheus.GaugeVec
 	endpointPeers  *prometheus.GaugeVec
+
+	notifyResults *prometheus.CounterVec
 }
 
 // New registers all metrics.
@@ -124,6 +126,10 @@ func New(version string) *Exporter {
 			Name: "cometduty_endpoint_peers",
 			Help: "peer count reported by the endpoint",
 		}, endpointLabels),
+		notifyResults: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: "cometduty_notify_total",
+			Help: "notifier delivery attempts by destination and result — alert on result=error",
+		}, []string{"dest", "result"}),
 	}
 	promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "cometduty_info",
@@ -210,14 +216,42 @@ func (e *Exporter) ActiveAlerts(name, chainID string, n int) {
 	e.activeAlerts.With(prometheus.Labels{"name": name, "chain_id": chainID}).Set(float64(n))
 }
 
-// Serve starts the metrics HTTP server. It returns on shutdown or fatal error.
-func Serve(ctxDone <-chan struct{}, bind string, port int) error {
+// NotifyResult records one notifier delivery outcome. Wire it to the alert
+// engine's observer so cometduty_notify_total tracks every attempt — a
+// destination that silently fails is the worst kind of monitoring bug.
+func (e *Exporter) NotifyResult(dest string, ok bool) {
+	res := "ok"
+	if !ok {
+		res = "error"
+	}
+	e.notifyResults.With(prometheus.Labels{"dest": dest, "result": res}).Inc()
+}
+
+// Serve starts the metrics HTTP server. ready, when non-nil, backs /readyz —
+// a readiness probe that reports whether the monitor is actually observing
+// blocks (vs /healthz which only proves the process is up). It returns on
+// shutdown or fatal error.
+func Serve(ctxDone <-chan struct{}, bind string, port int, ready func() (bool, []string)) error {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	if ready != nil {
+		mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+			ok, reasons := ready()
+			if ok {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte("ready"))
+				return
+			}
+			w.WriteHeader(http.StatusServiceUnavailable)
+			for _, why := range reasons {
+				_, _ = w.Write([]byte(why + "\n"))
+			}
+		})
+	}
 	srv := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", bind, port),
 		Handler:           mux,

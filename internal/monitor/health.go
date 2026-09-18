@@ -332,3 +332,20 @@ func (c *Chain) alert(chainID string, tg *Target, key string, resolved bool, sev
 	// resolve notices only to destinations that actually got the raise.
 	go c.eng.Dispatch(context.Background(), a)
 }
+
+// ready reports whether the chain is being observed end-to-end: at least one
+// healthy RPC endpoint and a block seen recently. Backs /readyz.
+func (c *Chain) ready() (bool, string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.noNodes {
+		return false, "no healthy RPC endpoints"
+	}
+	if c.lastBlockTime.IsZero() {
+		return false, "waiting for first block"
+	}
+	if age := time.Since(c.lastBlockTime); age > 2*time.Minute {
+		return false, fmt.Sprintf("no block for %s", age.Round(time.Second))
+	}
+	return true, ""
+}
