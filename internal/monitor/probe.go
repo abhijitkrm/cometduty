@@ -45,7 +45,7 @@ func ResolveValidators(ctx context.Context, cl *rpc.Client, vcs []config.Validat
 			continue
 		}
 		qctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		consAddr, moniker, jailed, bonded, err := getValidatorRecord(qctx, cl, vc.ValoperAddress)
+		consAddr, moniker, jailed, bonded, _, err := getValidatorRecord(qctx, cl, vc.ValoperAddress)
 		cancel()
 		if err != nil {
 			rv.Err = err
@@ -143,7 +143,7 @@ func ProbeChain(ctx context.Context, cc *config.ChainConfig) []ProbeResult {
 			continue
 		}
 		qctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		consAddr, moniker, jailed, bonded, err := getValidatorRecord(qctx, client, vc.ValoperAddress)
+		consAddr, moniker, jailed, bonded, _, err := getValidatorRecord(qctx, client, vc.ValoperAddress)
 		cancel()
 		if err != nil {
 			out = append(out, ProbeResult{subj, false, err.Error()})

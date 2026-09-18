@@ -56,6 +56,8 @@ type Exporter struct {
 	evmTxPending   *prometheus.GaugeVec
 	evmTxQueued    *prometheus.GaugeVec
 	evmGasRatio    *prometheus.GaugeVec
+	nodeCPUPct     *prometheus.GaugeVec
+	nodeMemBytes   *prometheus.GaugeVec
 }
 
 // New registers all metrics.
@@ -181,6 +183,14 @@ func New(version string) *Exporter {
 			Name: "cometduty_evm_gas_used_ratio",
 			Help: "gasUsed/gasLimit of the latest EVM block — sustained ~1.0 is saturation",
 		}, []string{"name", "chain_id"}),
+		nodeCPUPct: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_node_cpu_percent",
+			Help: "node process CPU usage percent, from its own metrics endpoint (metrics_url)",
+		}, []string{"name", "chain_id", "endpoint"}),
+		nodeMemBytes: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_node_memory_bytes",
+			Help: "node process resident memory in bytes, from its own metrics endpoint (metrics_url)",
+		}, []string{"name", "chain_id", "endpoint"}),
 	}
 	promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "cometduty_info",
@@ -295,6 +305,13 @@ func (e *Exporter) EvmInternals(name, chainID, endpoint string, txpoolPending, t
 	e.evmTxPending.With(l).Set(float64(txpoolPending))
 	e.evmTxQueued.With(l).Set(float64(txpoolQueued))
 	e.evmGasRatio.With(l).Set(gasUsedRatio)
+}
+
+// NodeSysstats exports host stats scraped off the node's own metrics endpoint.
+func (e *Exporter) NodeSysstats(name, chainID, endpoint string, cpuPct, memBytes float64) {
+	l := prometheus.Labels{"name": name, "chain_id": chainID, "endpoint": endpoint}
+	e.nodeCPUPct.With(l).Set(cpuPct)
+	e.nodeMemBytes.With(l).Set(memBytes)
 }
 
 // NotifyResult records one notifier delivery outcome. Wire it to the alert

@@ -34,7 +34,7 @@ endpoints.
 - **Watch** — per-block sign classification (proposed / signed / prevote-only /
   missed), consecutive-miss tracking, slashing-window percentage, jailed and
   tombstoned detection
-- **Alert** — 12 alert types to PagerDuty, Slack, Discord, Telegram, webhook,
+- **Alert** — 19 alert types to PagerDuty, Slack, Discord, Telegram, webhook,
   ntfy, or Opsgenie; dedup, flap suppression, auto-resolve, durable JSONL audit
 - **Observe** — Prometheus metrics for signing, endpoints, consensus internals
   (mempool, round), and the EVM layer (lag, txpool, gas); `/healthz` +
@@ -78,6 +78,14 @@ go install github.com/abhijitkrm/cometduty/cmd/cometduty@latest
 # or docker (multi-arch images on ghcr)
 docker run -v $PWD/config.yml:/config/config.yml:ro -v cd-data:/data \
   -p 28686:28686 ghcr.io/abhijitkrm/cometduty:latest
+```
+
+Behind a broken registry proxy? `deploy/Dockerfile.local` packages a
+natively built static binary on alpine — no base-image pull needed:
+
+```sh
+CGO_ENABLED=0 go build -o cometduty ./cmd/cometduty
+docker build -f deploy/Dockerfile.local -t cometduty:local .
 ```
 
 ## Quick start
@@ -139,6 +147,13 @@ probes.
 | `mempool-txs` | node mempool backlog > `mempool_txs_alert` (0 = metric only) | CheckTx/execution wedge, tx flood |
 | `consensus-round` | node consensus round > `consensus_round_alert` (0 = metric only) | leader churn — proposals timing out |
 | `evm-txpool` | EVM txpool queued > `evm_txpool_queued_alert` (0 = metric only) | nonce gap or execution stall |
+| `catching-up` | configured node is syncing (`catching_up`) | restart after outage, state-sync, partition healing |
+| `validator-new` | any validator joins the set (`set_watch_enabled`) | new operator onboarded, post-upgrade set rotation |
+| `validator-gone` | any validator leaves the set (`set_watch_enabled`) | unbond, jail eviction, key rotation |
+| `validator-jailed` | any validator jails (`set_watch_enabled`) | downtime/double-sign slash — even unmonitored validators |
+| `stake-change` | monitored validator's bonded stake moves > `stake_change_pct`% | big delegation/undelegation, slash event |
+| `cpu-high` | node CPU > `cpu_pct_alert`% (needs node `metrics_url`) | load spike, runaway process, under-provisioned host |
+| `mem-high` | node RSS > `mem_bytes_alert` (needs node `metrics_url`) | leak, state growth, OOM runway |
 
 Alerts carry validator moniker, chain id, and the condition. Every raise is
 paired with a resolve when the condition clears, so PagerDuty/Opsgenie
@@ -167,6 +182,7 @@ bounded retry on failed sends. Every delivery attempt is counted in
 - `cometduty_evm_block_height`, `cometduty_evm_lag_blocks`, `cometduty_evm_endpoint_down_seconds`, `cometduty_evm_syncing` — execution layer (when `evm_rpc` is set)
 - `cometduty_evm_txpool_pending`, `cometduty_evm_txpool_queued`, `cometduty_evm_gas_used_ratio` — EVM internals via `txpool_status` / `eth_getBlockByNumber`
 - `cometduty_mempool_txs`, `cometduty_mempool_txs_bytes`, `cometduty_consensus_round` — per-node consensus internals via `num_unconfirmed_txs` / `consensus_state`
+- `cometduty_node_cpu_percent`, `cometduty_node_memory_bytes` — host stats scraped off each node's own prometheus endpoint (per-node `metrics_url`)
 - `cometduty_notify_total{dest,result}` — notifier delivery attempts; alert on `result="error"`
 - `cometduty_last_block_height`, `cometduty_time_since_last_block`, `cometduty_active_alerts`, `cometduty_total_(un)healthy_endpoints`
 

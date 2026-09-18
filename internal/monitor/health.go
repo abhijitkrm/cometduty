@@ -3,6 +3,10 @@ package monitor
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -276,11 +280,94 @@ func (c *Chain) probeNode(ctx context.Context, n *nodeState, chainID string) *no
 	}
 	rcancel()
 
+	// host stats via the node's own prometheus endpoint — non-fatal
+	if n.cfg.MetricsURL != "" {
+		c.probeSysstats(ctx, n)
+	}
+
 	if wasDown {
 		c.log.Info("node recovered", "endpoint", nodeLabel(n))
 	}
 	return n
 }
+
+// probeSysstats scrapes process_cpu_seconds_total and
+// process_resident_memory_bytes off the node's own prometheus endpoint.
+// CPU% is derived from the counter delta between probes — it can exceed 100
+// on multi-core nodes.
+func (c *Chain) probeSysstats(ctx context.Context, n *nodeState) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(n.cfg.MetricsURL, "/")+"/metrics", nil)
+	if err != nil {
+		return
+	}
+	hctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	resp, err := sysClient.Do(req.WithContext(hctx))
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return
+	}
+	var cpuSec, memBytes float64
+	for _, line := range strings.Split(string(body), "\n") {
+		if v, ok := strings.CutPrefix(line, "process_cpu_seconds_total "); ok {
+			cpuSec, _ = strconv.ParseFloat(strings.Fields(v)[0], 64)
+		} else if v, ok := strings.CutPrefix(line, "process_resident_memory_bytes "); ok {
+			memBytes, _ = strconv.ParseFloat(strings.Fields(v)[0], 64)
+		}
+	}
+
+	c.mu.Lock()
+	now := time.Now()
+	if !n.sysPrevAt.IsZero() && cpuSec > 0 {
+		dt := now.Sub(n.sysPrevAt).Seconds()
+		if dt > 0 {
+			n.cpuPct = (cpuSec - n.sysPrevCPU) / dt * 100
+			if n.cpuPct < 0 {
+				n.cpuPct = 0
+			}
+		}
+	}
+	n.sysPrevCPU, n.sysPrevAt, n.memBytes = cpuSec, now, memBytes
+	cpuPct, mem := n.cpuPct, n.memBytes
+	chainID, name := c.cfg.ChainID, c.name
+	c.mu.Unlock()
+
+	if c.met != nil {
+		c.met.NodeSysstats(name, chainID, n.cfg.URL, cpuPct, mem)
+	}
+
+	a := c.cfg.Alerts
+	if a.CpuPctAlert > 0 {
+		key := "cpu-high:" + n.cfg.URL
+		if cpuPct > float64(a.CpuPctAlert) && !n.cpuAlerted {
+			n.cpuAlerted = true
+			c.alert(chainID, nil, key, false, "warning",
+				fmt.Sprintf("node %s CPU at %.0f%% (> %d%%) on %s", nodeLabel(n), cpuPct, a.CpuPctAlert, chainID))
+		} else if n.cpuAlerted && cpuPct <= float64(a.CpuPctAlert) {
+			n.cpuAlerted = false
+			c.alert(chainID, nil, key, true, "info",
+				fmt.Sprintf("node %s CPU back to %.0f%% on %s", nodeLabel(n), cpuPct, chainID))
+		}
+	}
+	if a.MemBytesAlert > 0 {
+		key := "mem-high:" + n.cfg.URL
+		if mem > float64(a.MemBytesAlert) && !n.memAlerted {
+			n.memAlerted = true
+			c.alert(chainID, nil, key, false, "warning",
+				fmt.Sprintf("node %s resident memory %.1f GiB (> %d bytes) on %s", nodeLabel(n), mem/1073741824, a.MemBytesAlert, chainID))
+		} else if n.memAlerted && mem <= float64(a.MemBytesAlert) {
+			n.memAlerted = false
+			c.alert(chainID, nil, key, true, "info",
+				fmt.Sprintf("node %s memory back to %.1f GiB on %s", nodeLabel(n), mem/1073741824, chainID))
+		}
+	}
+}
+
+var sysClient = &http.Client{Timeout: 6 * time.Second}
 
 func (c *Chain) markDown(n *nodeState, msg string) {
 	c.mu.Lock()
@@ -304,6 +391,7 @@ func nodeLabel(n *nodeState) string {
 // and node-down.
 func (c *Chain) watchLoop(ctx context.Context) {
 	nodeAlerted := map[string]bool{}
+	syncAlerted := make(map[string]bool)
 	t := time.NewTicker(2 * time.Second)
 	defer t.Stop()
 	for {
@@ -353,6 +441,18 @@ func (c *Chain) watchLoop(ctx context.Context) {
 
 		// --- node down alarms ---
 		for _, n := range c.nodes {
+			// catching-up: node is syncing — informative, distinct from down
+			syncKey := "catching-up:" + n.cfg.URL
+			if n.syncing && !syncAlerted[syncKey] {
+				syncAlerted[syncKey] = true
+				c.alert(cfg.ChainID, nil, syncKey, false, "warning",
+					fmt.Sprintf("RPC node %s is catching up on %s (height %d)", nodeLabel(n), cfg.ChainID, n.height))
+			} else if !n.syncing && (syncAlerted[syncKey] || c.eng.HasOpen(syncKey)) {
+				syncAlerted[syncKey] = false
+				c.alert(cfg.ChainID, nil, syncKey, true, "info",
+					fmt.Sprintf("RPC node %s finished syncing on %s", nodeLabel(n), cfg.ChainID))
+			}
+
 			key := "node-down:" + n.cfg.URL
 			if n.cfg.AlertIfDown && n.down && !n.downSince.IsZero() &&
 				time.Since(n.downSince) > time.Duration(root.NodeDownMin)*time.Minute {

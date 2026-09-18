@@ -22,6 +22,13 @@ raise.
 | `mempool-txs:<url>` | warning | Node's consensus mempool holds >`mempool_txs_alert` unconfirmed txs. | CheckTx or execution wedge, or a genuine tx flood — check `cometduty_mempool_txs_bytes` and whether blocks still contain txs. |
 | `consensus-round:<url>` | warning | Node sits above round `consensus_round_alert` — proposals keep timing out. | Leader churn: check that node's peers/clock sync and whether other validators show the same (network-wide partition vs. single bad node). |
 | `evm-txpool:<url>` | warning | EVM txpool queued count >`evm_txpool_queued_alert` — gapped-nonce txs piling up. | Nonce gap or execution stall: look for a stuck account (queued ≫ pending) or a wedged block executor. |
+| `catching-up:<url>` | warning | Configured node reports `catching_up=true` — it's syncing, not dead. | Usually benign post-restart; if it persists, check peer connectivity and whether state-sync finished. `node-down` may still fire if it stays unreachable. |
+| `validator-new:<valoper>` | info | A validator joined the staking set (`set_watch_enabled`). | Informational — new operator, set rotation, or post-upgrade re-add. |
+| `validator-gone:<valoper>` | warning | A validator left the staking set (`set_watch_enabled`). | Unbond, jail eviction, or key rotation — check whether it's expected churn. |
+| `validator-jailed:<valoper>` | critical | Any validator on the network was jailed (`set_watch_enabled`) — not just monitored ones. | A slashing event happened: check jailed_until, missed counter, and whether it was downtime or equivocation (tombstoned). |
+| `stake-change:<valcons>` | info | Monitored validator's bonded tokens moved > `stake_change_pct`% between refreshes. | Large delegation or undelegation — or a slash burn. Check delegations on an explorer. |
+| `cpu-high:<url>` | warning | Node process CPU > `cpu_pct_alert`% (requires node `metrics_url`). | Check for load spikes, runaway goroutines, or an under-provisioned host. Per-core % can exceed 100. |
+| `mem-high:<url>` | warning | Node resident memory > `mem_bytes_alert` (requires node `metrics_url`). | Memory leak or state growth — watch for OOM kills in the node logs. |
 
 ## Files and state
 

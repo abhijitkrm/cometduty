@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	queryv1beta1 "cosmossdk.io/api/cosmos/base/query/v1beta1"
 	slashingv1beta1 "cosmossdk.io/api/cosmos/slashing/v1beta1"
 	stakingv1beta1 "cosmossdk.io/api/cosmos/staking/v1beta1"
 	"google.golang.org/protobuf/proto"
@@ -21,8 +22,9 @@ type ValInfo struct {
 	Bonded     bool
 	Jailed     bool
 	Tombstoned bool
-	Missed     int64 // chain-reported missed counter for the current window
-	Window     int64 // signed blocks window
+	Tokens     string // bonded stake (delegations move this)
+	Missed     int64  // chain-reported missed counter for the current window
+	Window     int64  // signed blocks window
 	ConsAddr   []byte
 	ConsHex    string // upper-case hex, matches vote/block signature data
 	Valcons    string // bech32 consensus address
@@ -84,41 +86,80 @@ func resolveConsAddress(valoper, override, consPrefix string, consAddrFromQuery 
 }
 
 const (
-	pathStakingValidator = "/cosmos.staking.v1beta1.Query/Validator"
-	pathSlashingInfo     = "/cosmos.slashing.v1beta1.Query/SigningInfo"
-	pathSlashingParams   = "/cosmos.slashing.v1beta1.Query/Params"
+	pathStakingValidator  = "/cosmos.staking.v1beta1.Query/Validator"
+	pathStakingValidators = "/cosmos.staking.v1beta1.Query/Validators"
+	pathSlashingInfo      = "/cosmos.slashing.v1beta1.Query/SigningInfo"
+	pathSlashingParams    = "/cosmos.slashing.v1beta1.Query/Params"
 )
 
 // getValidatorRecord fetches the staking record to learn the consensus pubkey,
 // moniker, jailed flag, and bond status.
-func getValidatorRecord(ctx context.Context, c *rpc.Client, valoper string) (consAddr []byte, moniker string, jailed, bonded bool, err error) {
+func getValidatorRecord(ctx context.Context, c *rpc.Client, valoper string) (consAddr []byte, moniker string, jailed, bonded bool, tokens string, err error) {
 	req := &stakingv1beta1.QueryValidatorRequest{ValidatorAddr: valoper}
 	b, err := proto.Marshal(req)
 	if err != nil {
-		return nil, "", false, false, err
+		return nil, "", false, false, "", err
 	}
 	resp, err := c.ABCIQuery(ctx, pathStakingValidator, b)
 	if err != nil {
-		return nil, "", false, false, fmt.Errorf("querying validator %s: %w", valoper, err)
+		return nil, "", false, false, "", fmt.Errorf("querying validator %s: %w", valoper, err)
 	}
 	out := &stakingv1beta1.QueryValidatorResponse{}
 	if err := proto.Unmarshal(resp.Value, out); err != nil {
-		return nil, "", false, false, fmt.Errorf("decoding validator response: %w", err)
+		return nil, "", false, false, "", fmt.Errorf("decoding validator response: %w", err)
 	}
 	v := out.GetValidator()
 	if v == nil {
-		return nil, "", false, false, fmt.Errorf("empty validator record for %s", valoper)
+		return nil, "", false, false, "", fmt.Errorf("empty validator record for %s", valoper)
 	}
 	pk := v.GetConsensusPubkey()
 	if pk == nil {
-		return nil, "", false, false, fmt.Errorf("no consensus pubkey for %s", valoper)
+		return nil, "", false, false, "", fmt.Errorf("no consensus pubkey for %s", valoper)
 	}
 	consAddr, err = consensus.AnyToAddress(pk.GetTypeUrl(), pk.GetValue())
 	if err != nil {
-		return nil, "", false, false, fmt.Errorf("decoding consensus pubkey (%s): %w", pk.GetTypeUrl(), err)
+		return nil, "", false, false, "", fmt.Errorf("decoding consensus pubkey (%s): %w", pk.GetTypeUrl(), err)
 	}
 	return consAddr, v.GetDescription().GetMoniker(), v.GetJailed(),
-		v.GetStatus() == stakingv1beta1.BondStatus_BOND_STATUS_BONDED, nil
+		v.GetStatus() == stakingv1beta1.BondStatus_BOND_STATUS_BONDED, v.GetTokens(), nil
+}
+
+// setEntry is one validator's membership state for set-watch diffs.
+type setEntry struct {
+	valoper string
+	moniker string
+	jailed  bool
+	bonded  bool
+}
+
+// listValidators fetches the full staking set (all bond statuses, one page) —
+// the set-watch baseline for join/leave/jail detection.
+func listValidators(ctx context.Context, c *rpc.Client) ([]setEntry, error) {
+	req := &stakingv1beta1.QueryValidatorsRequest{
+		Pagination: &queryv1beta1.PageRequest{Limit: 500},
+	}
+	b, err := proto.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.ABCIQuery(ctx, pathStakingValidators, b)
+	if err != nil {
+		return nil, fmt.Errorf("listing validators: %w", err)
+	}
+	out := &stakingv1beta1.QueryValidatorsResponse{}
+	if err := proto.Unmarshal(resp.Value, out); err != nil {
+		return nil, fmt.Errorf("decoding validators response: %w", err)
+	}
+	entries := make([]setEntry, 0, len(out.GetValidators()))
+	for _, v := range out.GetValidators() {
+		entries = append(entries, setEntry{
+			valoper: v.GetOperatorAddress(),
+			moniker: v.GetDescription().GetMoniker(),
+			jailed:  v.GetJailed(),
+			bonded:  v.GetStatus() == stakingv1beta1.BondStatus_BOND_STATUS_BONDED,
+		})
+	}
+	return entries, nil
 }
 
 // getSigningInfo fetches tombstoned + missed counter. Returns

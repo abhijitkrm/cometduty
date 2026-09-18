@@ -43,9 +43,17 @@ the monitor end-to-end.
 
 ### Alerts
 
-- **12 alert types**: `consecutive`, `window-pct`, `stalled`, `node-down`,
-  `node-lag`, `inactive` (jailed/tombstoned/unbonded), `no-servers`,
-  `evm-down`, `evm-lag`, `mempool-txs`, `consensus-round`, `evm-txpool`
+- **19 alert types**: `consecutive`, `window-pct`, `stalled`, `node-down`,
+  `node-lag`, `catching-up`, `inactive` (jailed/tombstoned/unbonded),
+  `no-servers`, `evm-down`, `evm-lag`, `evm-txpool`, `mempool-txs`,
+  `consensus-round`, `validator-new`, `validator-gone`, `validator-jailed`,
+  `stake-change`, `cpu-high`, `mem-high`
+- Validator-set watch (`set_watch_enabled`): diffs the full staking set
+  every refresh — catches ANY validator joining, leaving, or jailing,
+  not just monitored ones
+- Host stats: optional per-node `metrics_url` scrapes the node's own
+  prometheus endpoint for `cometduty_node_cpu_percent` /
+  `cometduty_node_memory_bytes` + `cpu-high`/`mem-high` alerts
 - Every raise paired with a resolve — incidents auto-close on PagerDuty /
   Opsgenie, including for alerts restored from a previous run
 - Engine: per-destination dedup, flap suppression, periodic still-open

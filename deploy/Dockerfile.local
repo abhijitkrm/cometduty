@@ -1,0 +1,8 @@
+# Local verification image — the canonical multi-stage Dockerfile uses
+# golang/distroless bases (CI/goreleaser). This variant packages a natively
+# built static binary on alpine for environments where registry pulls stall.
+FROM alpine
+COPY cometduty /cometduty
+USER 65534:65534
+EXPOSE 28686
+ENTRYPOINT ["/cometduty", "-f", "/config/config.yml", "--state", "/data/state.json", "--alert-log", "/data/alerts.jsonl"]

@@ -112,6 +112,14 @@ chains:
       consensus_round_alert: 0    # node consensus round > N (leader churn)
       evm_txpool_queued_alert: 0  # evm txpool queued > N (nonce gap / stall)
 
+      # Validator-set watch — any validator, not just monitored ones:
+      set_watch_enabled: no       # validator-new / validator-gone / validator-jailed
+      stake_change_pct: 0         # monitored validator bonded stake moved >N%
+
+      # Host stats via the node's own prometheus endpoint (needs metrics_url):
+      cpu_pct_alert: 0            # node cpu >N% (per-core; >100 possible)
+      mem_bytes_alert: 0          # node resident memory >N bytes
+
       # per-chain destination overrides (enabled + credentials):
       pagerduty: {enabled: yes}
       discord:   {enabled: yes}
@@ -127,6 +135,7 @@ chains:
       - url: tcp://localhost:26657
         name: local sentry      # shown instead of the raw URL
         alert_if_down: yes
+        # metrics_url: http://localhost:26660  # node's own prometheus endpoint — enables cpu/mem stats
       - url: https://rpc2.example.com:443
         alert_if_down: no
         # insecure_tls: yes      # self-signed certs

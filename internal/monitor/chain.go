@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/big"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +30,7 @@ type MetricsSink interface {
 	EvmHealth(name, chainID, endpoint string, height, lag int64, downSeconds float64, syncing bool)
 	NodeInternals(name, chainID, endpoint, label string, mempoolTxs, mempoolBytes, consensusRound float64)
 	EvmInternals(name, chainID, endpoint string, txpoolPending, txpoolQueued int64, gasUsedRatio float64)
+	NodeSysstats(name, chainID, endpoint string, cpuPct, memBytes float64)
 }
 
 // nodeState tracks a configured endpoint's health.
@@ -48,6 +50,13 @@ type nodeState struct {
 	round          int64
 	mempoolAlerted bool // mempool alert currently open
 	roundAlerted   bool // consensus-round alert currently open
+
+	cpuPct     float64 // derived from process_cpu_seconds_total deltas
+	memBytes   float64 // process_resident_memory_bytes
+	sysPrevCPU float64
+	sysPrevAt  time.Time
+	cpuAlerted bool // cpu-high alert currently open
+	memAlerted bool // mem-high alert currently open
 }
 
 // Target is one validator being watched on a chain.
@@ -99,7 +108,10 @@ type Chain struct {
 	evmQueued      int64
 	evmGasRatio    float64
 	evmTxpoolAlarm bool // txpool alert currently open
-	evmLagAlarm    bool
+
+	setSnapshot map[string]setEntry // last full validator-set view (set-watch)
+	setPrimed   bool                // baseline established — start diffing
+	evmLagAlarm bool
 }
 
 // NewChain builds a monitor for one chain. rootFn must return the current
@@ -299,10 +311,15 @@ func (c *Chain) refreshValInfo(ctx context.Context, first bool) {
 		return
 	}
 
+	if c.cfg.Alerts.SetWatchEnabled {
+		c.setWatch(ctx, cl)
+	}
+
 	for _, t := range c.targets {
 		var consAddr []byte
 		var moniker string
 		var jailed, bonded bool
+		var tokens string
 
 		vc := t.vc
 		if vc.ValconsOverride != "" || strings.Contains(vc.ValoperAddress, "valcons") {
@@ -316,7 +333,7 @@ func (c *Chain) refreshValInfo(ctx context.Context, first bool) {
 		} else {
 			qctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			var err error
-			consAddr, moniker, jailed, bonded, err = getValidatorRecord(qctx, cl, vc.ValoperAddress)
+			consAddr, moniker, jailed, bonded, tokens, err = getValidatorRecord(qctx, cl, vc.ValoperAddress)
 			cancel()
 			if err != nil {
 				c.log.Warn("validator query failed", "valoper", vc.ValoperAddress, "err", err)
@@ -339,9 +356,20 @@ func (c *Chain) refreshValInfo(ctx context.Context, first bool) {
 			t.info = &ValInfo{}
 		}
 		ni := &ValInfo{
-			Moniker: moniker, Bonded: bonded, Jailed: jailed,
+			Moniker: moniker, Bonded: bonded, Jailed: jailed, Tokens: tokens,
 			ConsAddr: addr, ConsHex: hexAddr, Valcons: valcons,
 			Missed: t.info.Missed, Window: t.info.Window, Tombstoned: t.info.Tombstoned,
+		}
+		// stake-change alert: bonded tokens moved more than the threshold
+		if pct := int64(c.cfg.Alerts.StakeChangePct); pct > 0 && t.info.Tokens != "" && tokens != "" && t.info.Tokens != tokens {
+			if d := stakeDeltaPct(t.info.Tokens, tokens); d >= pct {
+				dir := "increased"
+				if stakeLess(tokens, t.info.Tokens) {
+					dir = "decreased"
+				}
+				c.alert(c.cfg.ChainID, t, "stake-change:"+valcons, false, "info",
+					fmt.Sprintf("%s bonded stake %s %d%% (%s -> %s) on %s", moniker, dir, d, t.info.Tokens, tokens, c.cfg.ChainID))
+			}
 		}
 		t.info = ni
 		c.byAddr[hexAddr] = t
@@ -390,6 +418,79 @@ func (c *Chain) refreshValInfo(ctx context.Context, first bool) {
 		}
 		c.mu.Unlock()
 	}
+}
+
+// setWatch diffs the full staking set against the last snapshot — catches
+// validators joining, leaving, or jailing even when they aren't monitored.
+// The first snapshot just establishes the baseline (no alerts).
+func (c *Chain) setWatch(ctx context.Context, cl *rpc.Client) {
+	sctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	entries, err := listValidators(sctx, cl)
+	cancel()
+	if err != nil {
+		c.log.Debug("set watch query failed", "err", err)
+		return
+	}
+	now := make(map[string]setEntry, len(entries))
+	for _, e := range entries {
+		now[e.valoper] = e
+	}
+
+	c.mu.Lock()
+	prev, primed := c.setSnapshot, c.setPrimed
+	c.setSnapshot, c.setPrimed = now, true
+	chainID := c.cfg.ChainID
+	c.mu.Unlock()
+	if !primed {
+		return // baseline — don't alert on every validator as "new"
+	}
+
+	for _, e := range entries {
+		old, existed := prev[e.valoper]
+		name := e.moniker
+		if name == "" {
+			name = e.valoper
+		}
+		switch {
+		case !existed:
+			c.alert(chainID, nil, "validator-new:"+e.valoper, false, "info",
+				fmt.Sprintf("new validator %s joined the set on %s (%s)", name, chainID, e.valoper))
+		case !old.jailed && e.jailed:
+			c.alert(chainID, nil, "validator-jailed:"+e.valoper, false, "critical",
+				fmt.Sprintf("validator %s was jailed on %s (%s)", name, chainID, e.valoper))
+		case old.jailed && !e.jailed:
+			c.alert(chainID, nil, "validator-jailed:"+e.valoper, true, "info",
+				fmt.Sprintf("validator %s was unjailed on %s (%s)", name, chainID, e.valoper))
+		}
+	}
+	for valoper, e := range prev {
+		if _, ok := now[valoper]; !ok {
+			name := e.moniker
+			if name == "" {
+				name = valoper
+			}
+			c.alert(chainID, nil, "validator-gone:"+valoper, false, "warning",
+				fmt.Sprintf("validator %s left the set on %s (%s)", name, chainID, valoper))
+		}
+	}
+}
+
+// stakeDeltaPct returns |new-old|/old * 100 as an integer percent (0 if unparseable).
+func stakeDeltaPct(oldS, newS string) int64 {
+	o, ok1 := new(big.Int).SetString(oldS, 10)
+	n, ok2 := new(big.Int).SetString(newS, 10)
+	if !ok1 || !ok2 || o.Sign() == 0 {
+		return 0
+	}
+	d := new(big.Int).Sub(n, o)
+	d.Abs(d)
+	return new(big.Int).Div(new(big.Int).Mul(d, big.NewInt(100)), o).Int64()
+}
+
+func stakeLess(a, b string) bool {
+	x, ok1 := new(big.Int).SetString(a, 10)
+	y, ok2 := new(big.Int).SetString(b, 10)
+	return ok1 && ok2 && x.Cmp(y) < 0
 }
 
 func (c *Chain) setNoNodes(v bool) {

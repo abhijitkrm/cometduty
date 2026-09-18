@@ -188,6 +188,20 @@ type AlertConfig struct {
 	ConsensusRoundAlert  int `yaml:"consensus_round_alert"`   // node consensus round > N (leader churn)
 	EvmTxpoolQueuedAlert int `yaml:"evm_txpool_queued_alert"` // evm txpool queued > N (execution wedge)
 
+	// Validator-set watch: alert when ANY validator joins, leaves, or jails —
+	// not just the monitored ones.
+	SetWatchEnabled bool `yaml:"set_watch_enabled"`
+
+	// Stake movement on monitored validators: alert when bonded tokens shift
+	// more than N% between refreshes (delegations, unbondings, slash events).
+	// 0 = disabled.
+	StakeChangePct int `yaml:"stake_change_pct"`
+
+	// Host stats via the node's own prometheus endpoint (node metrics_url).
+	// 0 = disabled.
+	CpuPctAlert   int   `yaml:"cpu_pct_alert"`   // cpu seconds/sec > N percent
+	MemBytesAlert int64 `yaml:"mem_bytes_alert"` // resident memory > N bytes
+
 	// Per-chain/per-validator destination overrides. The Enabled flag can
 	// selectively disable a destination for this scope, and the credential
 	// fields fall back to the global values when blank.
@@ -203,7 +217,8 @@ type AlertConfig struct {
 // NodeConfig is one RPC endpoint.
 type NodeConfig struct {
 	URL         string            `yaml:"url"`
-	Name        string            `yaml:"name"` // friendly label shown instead of the raw URL
+	Name        string            `yaml:"name"`        // friendly label shown instead of the raw URL
+	MetricsURL  string            `yaml:"metrics_url"` // optional: node's own prometheus endpoint for host stats
 	AlertIfDown bool              `yaml:"alert_if_down"`
 	InsecureTLS bool              `yaml:"insecure_tls"` // allow self-signed certs
 	Headers     map[string]string `yaml:"headers"`      // extra HTTP headers, e.g. Authorization
