@@ -249,12 +249,12 @@
       },
       "targets": [
         {
-          "expr": "rate(cometduty_signed_blocks[5m])",
+          "expr": "rate(cometduty_signed_blocks{moniker=~\"$validator\"}[5m])",
           "refId": "A",
           "legendFormat": "{{moniker}} signed"
         },
         {
-          "expr": "rate(cometduty_missed_blocks[5m])",
+          "expr": "rate(cometduty_missed_blocks{moniker=~\"$validator\"}[5m])",
           "refId": "B",
           "legendFormat": "{{moniker}} missed"
         }
@@ -303,7 +303,7 @@
       },
       "targets": [
         {
-          "expr": "cometduty_consecutive_missed_blocks",
+          "expr": "cometduty_consecutive_missed_blocks{moniker=~\"$validator\"}",
           "refId": "A",
           "legendFormat": "{{moniker}}"
         }
@@ -354,12 +354,12 @@
       },
       "targets": [
         {
-          "expr": "cometduty_window_missed_percent",
+          "expr": "cometduty_window_missed_percent{moniker=~\"$validator\"}",
           "refId": "A",
           "legendFormat": "{{moniker}}"
         },
         {
-          "expr": "cometduty_missed_blocks_for_window",
+          "expr": "cometduty_missed_blocks_for_window{moniker=~\"$validator\"}",
           "refId": "B",
           "legendFormat": "{{moniker}} count"
         }
@@ -631,6 +631,108 @@
           "sort": "none"
         }
       }
+    },
+    {
+      "type": "table",
+      "title": "Validator Overview",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cometduty-prom"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 39
+      },
+      "targets": [
+        {
+          "expr": "cometduty_consecutive_missed_blocks{moniker=~\"$validator\"}",
+          "refId": "A",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "expr": "cometduty_window_missed_percent{moniker=~\"$validator\"}",
+          "refId": "B",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "expr": "cometduty_missed_blocks_for_window{moniker=~\"$validator\"}",
+          "refId": "C",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "chain_id": true,
+              "name": true,
+              "job": true,
+              "instance": true,
+              "__name__": true
+            },
+            "renameByName": {
+              "moniker": "validator",
+              "validator": "valcons",
+              "Value #A": "consecutive missed",
+              "Value #B": "window missed %",
+              "Value #C": "missed in window"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "consecutive missed"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 5
+                    },
+                    {
+                      "color": "red",
+                      "value": 20
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "consecutive missed",
+            "desc": true
+          }
+        ]
+      }
     }
   ],
   "refresh": "30s",
@@ -641,7 +743,35 @@
     "validator"
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "name": "validator",
+        "label": "Validator",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "cometduty-prom"
+        },
+        "query": {
+          "query": "label_values(cometduty_signed_blocks, moniker)",
+          "refId": "v"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        }
+      }
+    ]
   },
   "time": {
     "from": "now-6h",
