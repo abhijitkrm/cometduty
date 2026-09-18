@@ -1,0 +1,21 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# cometduty runs on the host (host.docker.internal from Docker Desktop on
+# macOS); each validator exposes its own CometBFT metrics on :2766x.
+scrape_configs:
+  - job_name: cometduty
+    static_configs:
+      - targets: ["host.docker.internal:28686"]
+
+  - job_name: cometbft
+    static_configs:
+      - targets: ["host.docker.internal:27660"]
+        labels: {validator: validator-01}
+      - targets: ["host.docker.internal:27670"]
+        labels: {validator: validator-02}
+      - targets: ["host.docker.internal:27680"]
+        labels: {validator: validator-03}
+      - targets: ["host.docker.internal:27690"]
+        labels: {validator: validator-04}

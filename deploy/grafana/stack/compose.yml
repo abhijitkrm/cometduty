@@ -1,0 +1,36 @@
+# Local observability stack: Prometheus scrapes cometduty (running on the
+# host) plus each validator's own CometBFT metrics; Grafana serves the bundled
+# dashboard. `docker compose -f deploy/grafana/stack/compose.yml up -d`
+#
+#   Grafana:    http://localhost:3000  (admin / cometduty)
+#   Prometheus: http://localhost:9090
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: cometduty
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./provisioning:/etc/grafana/provisioning:ro
+      - ./dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
+volumes:
+  prom-data: {}
+  grafana-data: {}
