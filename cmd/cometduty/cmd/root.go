@@ -40,7 +40,6 @@ func Root() *cobra.Command {
 	pf.BoolVar(&jsonLogs, "log-json", false, "emit structured JSON logs")
 	pf.BoolVarP(&verbose, "verbose", "v", false, "debug logging")
 
-	root.AddCommand(validateCmd(), exampleConfigCmd(), testAlertCmd(), encryptCmd(), decryptCmd(), versionCmd(),
-		doctorCmd(), statusCmd(), unjailCmd(), debugCmd(), spinupCmd())
+	root.AddCommand(validateCmd(), exampleConfigCmd(), testAlertCmd(), encryptCmd(), decryptCmd(), versionCmd())
 	return root
 }

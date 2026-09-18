@@ -63,23 +63,15 @@ the monitor end-to-end.
   forgotten resolve
 - `test-alert` command to verify destinations before deploy
 
-### CLI operations
+### CLI (daemon surface only)
 
 - `validate` — strict schema check with line numbers; `--live` additionally
   probes nodes (reachability, chain-id, sync state, peers) and resolves
   each valoper to its valcons, reporting bonded/jailed/tombstoned state
-- `doctor <rpc> [--evm]` — one-shot node report: CometBFT chain-id, height,
-  catch-up, moniker/version, peers; plus EVM client version, chain-id,
-  block height, consensus↔EVM divergence, syncing, gas price
-- `status [-n N]` — terminal block-signing grid from `/commit` history;
-  positional signature decoding handles absent-signature and validator-set
-  drift correctly
-- `debug <valoper>` — per-validator diagnostic: resolution, jail/tombstone
-  state, slashing window position, recent signing pattern
-- `unjail` — wraps `evmd tx slashing unjail` with the right waits/checks
-- `spinup` — prints a validator bootstrap runbook (key gen, gentx, genesis
-  join, recommended flags, systemd unit)
 - `example-config`, `encrypt`/`decrypt` (age), `version`, `test-alert`
+- Interactive node ops (`doctor`, `status`, `unjail`, tx, upgrades) live in
+  the sibling [cometcli](https://github.com/abhijitkrm/cometcli) project —
+  cometduty stays a pure daemon
 
 ### Observability
 

@@ -258,6 +258,24 @@ func (c *Chain) probeNode(ctx context.Context, n *nodeState, chainID string) *no
 	}
 	pcancel()
 
+	// mempool backlog — non-fatal
+	mctx, mcancel := context.WithTimeout(ctx, 5*time.Second)
+	if txs, bytes, err := cl.NumUnconfirmedTxs(mctx); err == nil {
+		c.mu.Lock()
+		n.mempoolTxs, n.mempoolBytes = txs, bytes
+		c.mu.Unlock()
+	}
+	mcancel()
+
+	// consensus round — non-fatal; sustained elevation = leader churn
+	rctx, rcancel := context.WithTimeout(ctx, 5*time.Second)
+	if round, err := cl.ConsensusRound(rctx); err == nil {
+		c.mu.Lock()
+		n.round = round
+		c.mu.Unlock()
+	}
+	rcancel()
+
 	if wasDown {
 		c.log.Info("node recovered", "endpoint", nodeLabel(n))
 	}

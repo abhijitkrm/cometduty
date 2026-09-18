@@ -39,8 +39,8 @@ endpoints.
 - **Observe** — Prometheus metrics for signing, endpoints, consensus internals
   (mempool, round), and the EVM layer (lag, txpool, gas); `/healthz` +
   `/readyz`; provisioned Grafana dashboard
-- **Operate** — `validate --live`, `doctor`, terminal `status` grid, `debug`,
-  `unjail`, `spinup`
+- **Verify** — `validate --live` probes every configured node and resolves
+  each valoper before you deploy; `test-alert` proves the pager works
 
 It is a ground-up rewrite of the deprecated
 [tenderduty](https://github.com/blockpane/tenderduty) v2, built for
@@ -181,18 +181,15 @@ with a runnable Prometheus+Grafana stack in `deploy/grafana/stack/`.
 cometduty                      run the monitor (default command)
 cometduty validate [--live]    check config; --live also probes nodes and
                                resolves validators against the network
-cometduty doctor <rpc> [--evm] inspect a node: chain-id, height, peers,
-                               EVM chain-id, execution lag, gas price
-cometduty status [-n N]        one-shot terminal signing grid (last N blocks)
-cometduty debug <valoper>      per-validator diagnostic: jail state, slashing
-                               window, recent signing pattern
-cometduty unjail               wraps 'evmd tx slashing unjail' with sane flags
-cometduty spinup               print the validator bootstrap runbook
 cometduty example-config       print the annotated reference config
 cometduty test-alert [kind]    fire a test notification at one/all destinations
 cometduty encrypt | decrypt    age-encrypt/decrypt the config file
 cometduty version              build info
 ```
+
+cometduty is a daemon, not a toolbox — interactive node ops (`doctor`,
+`status`, `unjail`, tx, upgrades) live in the sibling
+[cometcli](https://github.com/abhijitkrm/cometcli) project.
 
 Global flags: `-f/--config` (file or https:// URL), `--chains-dir`,
 `--state`, `--alert-log` (JSONL delivery audit log, empty disables),

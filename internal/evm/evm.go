@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"strconv"
 	"strings"
@@ -125,35 +124,6 @@ func (c *Client) Syncing(ctx context.Context) (bool, *SyncStatus, error) {
 	st.Current, _ = hexInt(obj.CurrentBlock)
 	st.Highest, _ = hexInt(obj.HighestBlock)
 	return true, st, nil
-}
-
-// PeerCount returns net_peerCount.
-func (c *Client) PeerCount(ctx context.Context) (int64, error) {
-	var s string
-	if err := c.call(ctx, "net_peerCount", nil, &s); err != nil {
-		return 0, err
-	}
-	return hexInt(s)
-}
-
-// GasPrice returns eth_gasPrice in wei.
-func (c *Client) GasPrice(ctx context.Context) (*big.Int, error) {
-	var s string
-	if err := c.call(ctx, "eth_gasPrice", nil, &s); err != nil {
-		return nil, err
-	}
-	v, ok := new(big.Int).SetString(strings.TrimPrefix(s, "0x"), 16)
-	if !ok {
-		return nil, fmt.Errorf("bad gas price %q", s)
-	}
-	return v, nil
-}
-
-// ClientVersion returns web3_clientVersion (e.g. the evmd build identity).
-func (c *Client) ClientVersion(ctx context.Context) (string, error) {
-	var s string
-	err := c.call(ctx, "web3_clientVersion", nil, &s)
-	return s, err
 }
 
 // TxpoolStatus returns txpool_status: pending (executable next) and queued
