@@ -69,6 +69,11 @@ func ResolveValidators(ctx context.Context, cl *rpc.Client, vcs []config.Validat
 		scancel()
 		if serr == nil {
 			rv.Tombstoned, rv.Missed = tomb, missed
+			wctx, wcancel := context.WithTimeout(ctx, 10*time.Second)
+			if w, werr := getSlashingWindow(wctx, cl); werr == nil {
+				rv.Window = w
+			}
+			wcancel()
 		}
 		out = append(out, rv)
 	}

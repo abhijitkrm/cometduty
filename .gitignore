@@ -1,5 +1,5 @@
 # binaries
-cometduty
+/cometduty
 dist/
 *.test
 

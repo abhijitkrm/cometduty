@@ -95,6 +95,8 @@ docker run -v $PWD/config.yml:/config/config.yml:ro -v cd-data:/data \
 | `lag` | endpoint falls `lag_blocks` behind head | catching up, partitioned peer |
 | `inactive` | validator jailed / tombstoned / unbonded | slashing event, unbonding |
 | `no-servers` | every configured RPC is down | total monitoring blindness |
+| `evm-down` | configured `evm_rpc` unreachable | dead execution-layer RPC |
+| `evm-lag` | EVM `eth_blockNumber` `evm_lag_blocks`+ behind consensus | execution wedged — blocks finalize but no txs run |
 
 Alerts carry validator moniker, chain id, and the condition. Every raise is
 paired with a resolve when the condition clears, so PagerDuty/Opsgenie
@@ -118,7 +120,13 @@ double-page you or forget to resolve).
 - `cometduty_consecutive_missed_blocks`, `cometduty_missed_blocks_for_window`, `cometduty_window_missed_percent`
 - `cometduty_block_signature_ratio` — share of the whole set that signed the last block (network-wide early warning; <⅔ means trouble)
 - `cometduty_endpoint_lag_blocks`, `cometduty_endpoint_down_seconds`, `cometduty_endpoint_peers` — per-RPC health
-- `cometduty_last_block_height`, `cometduty_time_since_last_block`, `cometduty_active_alerts`
+- `cometduty_evm_block_height`, `cometduty_evm_lag_blocks`, `cometduty_evm_endpoint_down_seconds`, `cometduty_evm_syncing` — execution layer (when `evm_rpc` is set)
+- `cometduty_notify_total{dest,result}` — notifier delivery attempts; alert on `result="error"`
+- `cometduty_last_block_height`, `cometduty_time_since_last_block`, `cometduty_active_alerts`, `cometduty_total_(un)healthy_endpoints`
+
+Endpoints on the same listener: `/healthz` (process liveness), `/readyz`
+(every chain has a healthy endpoint and a recent block — k8s readiness).
+A ready-made Grafana dashboard lives at `deploy/grafana/`.
 
 ## Configuration notes
 
@@ -140,7 +148,15 @@ double-page you or forget to resolve).
 
 ```
 cometduty                      run the monitor (default command)
-cometduty validate             check config, exit non-zero on problems
+cometduty validate [--live]    check config; --live also probes nodes and
+                               resolves validators against the network
+cometduty doctor <rpc> [--evm] inspect a node: chain-id, height, peers,
+                               EVM chain-id, execution lag, gas price
+cometduty status [-n N]        one-shot terminal signing grid (last N blocks)
+cometduty debug <valoper>      per-validator diagnostic: jail state, slashing
+                               window, recent signing pattern
+cometduty unjail               wraps 'evmd tx slashing unjail' with sane flags
+cometduty spinup               print the validator bootstrap runbook
 cometduty example-config       print the annotated reference config
 cometduty test-alert [kind]    fire a test notification at one/all destinations
 cometduty encrypt | decrypt    age-encrypt/decrypt the config file
@@ -148,7 +164,11 @@ cometduty version              build info
 ```
 
 Global flags: `-f/--config` (file or https:// URL), `--chains-dir`,
-`--state`, `-v` (debug logging).
+`--state`, `--alert-log` (JSONL delivery audit log, empty disables),
+`-v` (debug logging).
+
+See [docs/RUNBOOK.md](docs/RUNBOOK.md) for the alert catalog and ops guide,
+and `deploy/k8s/` for Kubernetes manifests.
 
 ## Compatibility
 
