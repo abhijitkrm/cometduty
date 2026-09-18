@@ -19,6 +19,9 @@ raise.
 | `inactive:<valcons>` | critical | Validator left the active set: jailed, unbonded, or tombstoned (permanent — never unjails). | Jailed → fix cause, then `evmd tx slashing unjail`. Tombstoned → equivocation; the key is dead, provision a new validator. |
 | `evm-lag:<chain-id>` | warning | EVM execution layer is `evm_lag_blocks`+ behind consensus height — blocks are produced but not executing. | Check the evmd/eth layer logs; a wedged EVM means the chain looks alive but processes no transactions. |
 | `evm-down:<url>` | warning | The configured `evm_rpc` endpoint is unreachable. | Check the EVM RPC service; consensus may still be healthy — this is the execution layer only. |
+| `mempool-txs:<url>` | warning | Node's consensus mempool holds >`mempool_txs_alert` unconfirmed txs. | CheckTx or execution wedge, or a genuine tx flood — check `cometduty_mempool_txs_bytes` and whether blocks still contain txs. |
+| `consensus-round:<url>` | warning | Node sits above round `consensus_round_alert` — proposals keep timing out. | Leader churn: check that node's peers/clock sync and whether other validators show the same (network-wide partition vs. single bad node). |
+| `evm-txpool:<url>` | warning | EVM txpool queued count >`evm_txpool_queued_alert` — gapped-nonce txs piling up. | Nonce gap or execution stall: look for a stuck account (queued ≫ pending) or a wedged block executor. |
 
 ## Files and state
 

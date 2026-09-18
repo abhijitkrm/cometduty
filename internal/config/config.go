@@ -182,6 +182,12 @@ type AlertConfig struct {
 	EvmLagEnabled  bool `yaml:"evm_lag_enabled"`
 	EvmDownEnabled bool `yaml:"evm_down_enabled"` // evm_rpc unreachable
 
+	// Consensus/EVM internals. Metrics are always exported; a nonzero value
+	// here also raises an alert when the threshold is exceeded.
+	MempoolTxsAlert      int `yaml:"mempool_txs_alert"`       // node mempool backlog > N txs
+	ConsensusRoundAlert  int `yaml:"consensus_round_alert"`   // node consensus round > N (leader churn)
+	EvmTxpoolQueuedAlert int `yaml:"evm_txpool_queued_alert"` // evm txpool queued > N (execution wedge)
+
 	// Per-chain/per-validator destination overrides. The Enabled flag can
 	// selectively disable a destination for this scope, and the credential
 	// fields fall back to the global values when blank.

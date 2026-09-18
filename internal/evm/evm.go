@@ -155,3 +155,44 @@ func (c *Client) ClientVersion(ctx context.Context) (string, error) {
 	err := c.call(ctx, "web3_clientVersion", nil, &s)
 	return s, err
 }
+
+// TxpoolStatus returns txpool_status: pending (executable next) and queued
+// (gapped/future nonces) transaction counts. A growing queued count is the
+// classic sign of a wedged execution layer — txs arrive but never land.
+func (c *Client) TxpoolStatus(ctx context.Context) (pending, queued int64, err error) {
+	var r struct {
+		Pending string `json:"pending"`
+		Queued  string `json:"queued"`
+	}
+	if err = c.call(ctx, "txpool_status", nil, &r); err != nil {
+		return 0, 0, err
+	}
+	pending, err = hexInt(r.Pending)
+	if err != nil {
+		return 0, 0, err
+	}
+	queued, err = hexInt(r.Queued)
+	return pending, queued, err
+}
+
+// GasUsedRatio returns gasUsed/gasLimit of the latest block — block fullness.
+// Sustained ~1.0 means the EVM is saturated; ~0 while the mempool has txs means
+// execution is stalled.
+func (c *Client) GasUsedRatio(ctx context.Context) (float64, error) {
+	var b struct {
+		GasUsed  string `json:"gasUsed"`
+		GasLimit string `json:"gasLimit"`
+	}
+	if err := c.call(ctx, "eth_getBlockByNumber", []any{"latest", false}, &b); err != nil {
+		return 0, err
+	}
+	used, err := hexInt(b.GasUsed)
+	if err != nil {
+		return 0, err
+	}
+	limit, err := hexInt(b.GasLimit)
+	if err != nil || limit == 0 {
+		return 0, fmt.Errorf("bad gas limit %q", b.GasLimit)
+	}
+	return float64(used) / float64(limit), nil
+}

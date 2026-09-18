@@ -97,6 +97,9 @@ docker run -v $PWD/config.yml:/config/config.yml:ro -v cd-data:/data \
 | `no-servers` | every configured RPC is down | total monitoring blindness |
 | `evm-down` | configured `evm_rpc` unreachable | dead execution-layer RPC |
 | `evm-lag` | EVM `eth_blockNumber` `evm_lag_blocks`+ behind consensus | execution wedged — blocks finalize but no txs run |
+| `mempool-txs` | node mempool backlog > `mempool_txs_alert` (0 = metric only) | CheckTx/execution wedge, tx flood |
+| `consensus-round` | node consensus round > `consensus_round_alert` (0 = metric only) | leader churn — proposals timing out |
+| `evm-txpool` | EVM txpool queued > `evm_txpool_queued_alert` (0 = metric only) | nonce gap or execution stall |
 
 Alerts carry validator moniker, chain id, and the condition. Every raise is
 paired with a resolve when the condition clears, so PagerDuty/Opsgenie
@@ -121,6 +124,8 @@ double-page you or forget to resolve).
 - `cometduty_block_signature_ratio` — share of the whole set that signed the last block (network-wide early warning; <⅔ means trouble)
 - `cometduty_endpoint_lag_blocks`, `cometduty_endpoint_down_seconds`, `cometduty_endpoint_peers` — per-RPC health
 - `cometduty_evm_block_height`, `cometduty_evm_lag_blocks`, `cometduty_evm_endpoint_down_seconds`, `cometduty_evm_syncing` — execution layer (when `evm_rpc` is set)
+- `cometduty_evm_txpool_pending`, `cometduty_evm_txpool_queued`, `cometduty_evm_gas_used_ratio` — EVM internals via `txpool_status` / `eth_getBlockByNumber`
+- `cometduty_mempool_txs`, `cometduty_mempool_txs_bytes`, `cometduty_consensus_round` — per-node consensus internals via `num_unconfirmed_txs` / `consensus_state`
 - `cometduty_notify_total{dest,result}` — notifier delivery attempts; alert on `result="error"`
 - `cometduty_last_block_height`, `cometduty_time_since_last_block`, `cometduty_active_alerts`, `cometduty_total_(un)healthy_endpoints`
 

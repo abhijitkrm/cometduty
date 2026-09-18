@@ -27,6 +27,8 @@ type MetricsSink interface {
 	Window(name, chainID, validator, moniker string, missed, window int64)
 	ActiveAlerts(name, chainID string, n int)
 	EvmHealth(name, chainID, endpoint string, height, lag int64, downSeconds float64, syncing bool)
+	NodeInternals(name, chainID, endpoint, label string, mempoolTxs, mempoolBytes, consensusRound float64)
+	EvmInternals(name, chainID, endpoint string, txpoolPending, txpoolQueued int64, gasUsedRatio float64)
 }
 
 // nodeState tracks a configured endpoint's health.
@@ -40,6 +42,12 @@ type nodeState struct {
 	peers     int64
 	alerted   bool // down alert currently open
 	lagged    bool // lag alert currently open
+
+	mempoolTxs     int64
+	mempoolBytes   int64
+	round          int64
+	mempoolAlerted bool // mempool alert currently open
+	roundAlerted   bool // consensus-round alert currently open
 }
 
 // Target is one validator being watched on a chain.
@@ -81,13 +89,17 @@ type Chain struct {
 	lastSlashingAt time.Time
 
 	// EVM execution-layer state (only when cfg.EvmRPC is set)
-	evmDown      bool
-	evmDownSince time.Time
-	evmDownAlarm bool
-	evmHeight    int64
-	evmSyncing   bool
-	evmLastMsg   string
-	evmLagAlarm  bool
+	evmDown        bool
+	evmDownSince   time.Time
+	evmDownAlarm   bool
+	evmHeight      int64
+	evmSyncing     bool
+	evmLastMsg     string
+	evmPending     int64
+	evmQueued      int64
+	evmGasRatio    float64
+	evmTxpoolAlarm bool // txpool alert currently open
+	evmLagAlarm    bool
 }
 
 // NewChain builds a monitor for one chain. rootFn must return the current

@@ -34,6 +34,8 @@ func (c *Chain) probeAllNodes(ctx context.Context) {
 	chainID := c.cfg.ChainID
 	lagBlocks := int64(c.cfg.Alerts.LagBlocks)
 	lagEnabled := c.cfg.Alerts.LagEnabled
+	mempoolAlert := int64(c.cfg.Alerts.MempoolTxsAlert)
+	roundAlert := int64(c.cfg.Alerts.ConsensusRoundAlert)
 	evmURL := c.cfg.EvmRPC
 	c.mu.Unlock()
 
@@ -95,6 +97,37 @@ func (c *Chain) probeAllNodes(ctx context.Context) {
 			c.alert(chainID, nil, "node-lag:"+n.cfg.URL, true, "info",
 				fmt.Sprintf("RPC node %s is %d blocks behind head on %s", nodeLabel(n), lag, chainID))
 		}
+
+		if c.met != nil {
+			var mempoolTxs, mempoolBytes, round float64
+			if !n.down {
+				mempoolTxs, mempoolBytes, round = float64(n.mempoolTxs), float64(n.mempoolBytes), float64(n.round)
+			}
+			c.met.NodeInternals(c.name, chainID, n.cfg.URL, nodeLabel(n), mempoolTxs, mempoolBytes, round)
+		}
+
+		// mempool backlog alerting (0 = metric only)
+		if mempoolAlert > 0 && !n.down && n.mempoolTxs > int64(mempoolAlert) && !n.mempoolAlerted {
+			n.mempoolAlerted = true
+			c.alert(chainID, nil, "mempool-txs:"+n.cfg.URL, false, "warning",
+				fmt.Sprintf("RPC node %s has %d unconfirmed txs (%d bytes) on %s — CheckTx/execution may be wedged", nodeLabel(n), n.mempoolTxs, n.mempoolBytes, chainID))
+		} else if n.mempoolAlerted && (n.down || n.mempoolTxs <= int64(mempoolAlert)) {
+			n.mempoolAlerted = false
+			c.alert(chainID, nil, "mempool-txs:"+n.cfg.URL, true, "info",
+				fmt.Sprintf("RPC node %s mempool backlog cleared on %s (%d txs)", nodeLabel(n), chainID, n.mempoolTxs))
+		}
+
+		// consensus round alerting (0 = metric only) — sustained elevation is
+		// leader churn even while the node answers RPC
+		if roundAlert > 0 && !n.down && n.round > int64(roundAlert) && !n.roundAlerted {
+			n.roundAlerted = true
+			c.alert(chainID, nil, "consensus-round:"+n.cfg.URL, false, "warning",
+				fmt.Sprintf("RPC node %s is at consensus round %d (> %d) on %s — proposals timing out", nodeLabel(n), n.round, roundAlert, chainID))
+		} else if n.roundAlerted && (n.down || n.round <= int64(roundAlert)) {
+			n.roundAlerted = false
+			c.alert(chainID, nil, "consensus-round:"+n.cfg.URL, true, "info",
+				fmt.Sprintf("RPC node %s consensus recovered on %s (round %d)", nodeLabel(n), chainID, n.round))
+		}
 	}
 	c.noNodes = !anyUp
 	if !anyUp {
@@ -145,6 +178,36 @@ func (c *Chain) probeEVM(ctx context.Context, url string) {
 	}
 	if c.met != nil {
 		c.met.EvmHealth(c.name, c.cfg.ChainID, url, c.evmHeight, lag, downSec, c.evmSyncing)
+	}
+	txpoolAlert := int64(c.cfg.Alerts.EvmTxpoolQueuedAlert)
+	c.mu.Unlock()
+
+	// execution internals — txpool depth and block fullness, both non-fatal
+	tctx, tcancel := context.WithTimeout(ctx, 5*time.Second)
+	pending, queued, terr := cl.TxpoolStatus(tctx)
+	tcancel()
+	gctx, gcancel := context.WithTimeout(ctx, 5*time.Second)
+	ratio, gerr := cl.GasUsedRatio(gctx)
+	gcancel()
+
+	c.mu.Lock()
+	if terr == nil {
+		c.evmPending, c.evmQueued = pending, queued
+	}
+	if gerr == nil {
+		c.evmGasRatio = ratio
+	}
+	if c.met != nil {
+		c.met.EvmInternals(c.name, c.cfg.ChainID, url, c.evmPending, c.evmQueued, c.evmGasRatio)
+	}
+	if txpoolAlert > 0 && c.evmQueued > txpoolAlert && !c.evmTxpoolAlarm {
+		c.evmTxpoolAlarm = true
+		c.alert(c.cfg.ChainID, nil, "evm-txpool:"+url, false, "warning",
+			fmt.Sprintf("EVM txpool on %s has %d queued txs (> %d) — execution wedge or nonce gap", url, c.evmQueued, txpoolAlert))
+	} else if c.evmTxpoolAlarm && c.evmQueued <= txpoolAlert {
+		c.evmTxpoolAlarm = false
+		c.alert(c.cfg.ChainID, nil, "evm-txpool:"+url, true, "info",
+			fmt.Sprintf("EVM txpool on %s drained (queued %d)", url, c.evmQueued))
 	}
 	c.mu.Unlock()
 }

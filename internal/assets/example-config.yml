@@ -107,6 +107,11 @@ chains:
       evm_lag_enabled: yes     # execution behind consensus
       evm_lag_blocks: 30       # comet height - eth_blockNumber
 
+      # Consensus/EVM internals — metrics always exported; nonzero = also alert.
+      mempool_txs_alert: 0        # node mempool backlog > N txs (CheckTx/exec wedge)
+      consensus_round_alert: 0    # node consensus round > N (leader churn)
+      evm_txpool_queued_alert: 0  # evm txpool queued > N (nonce gap / stall)
+
       # per-chain destination overrides (enabled + credentials):
       pagerduty: {enabled: yes}
       discord:   {enabled: yes}

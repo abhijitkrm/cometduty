@@ -19,3 +19,23 @@ scrape_configs:
         labels: {validator: validator-03}
       - targets: ["host.docker.internal:27690"]
         labels: {validator: validator-04}
+
+  # EVM execution-layer exporter on each node (container :8100) — chain head,
+  # reorgs, db caches, p2p discovery, rpc latencies. Txpool depth and block
+  # fullness come from cometduty itself (txpool_status / eth_getBlockByNumber).
+  - job_name: evm
+    static_configs:
+      - targets: ["host.docker.internal:9100"]
+        labels: {validator: validator-01}
+      - targets: ["host.docker.internal:9110"]
+        labels: {validator: validator-02}
+      - targets: ["host.docker.internal:9120"]
+        labels: {validator: validator-03}
+      - targets: ["host.docker.internal:9130"]
+        labels: {validator: validator-04}
+
+  # Host CPU/disk/mem: run node_exporter on each validator host and point this
+  # at it. CometBFT/EVM metrics don't carry kernel-level host stats.
+  # - job_name: node-exporter
+  #   static_configs:
+  #     - targets: ["validator-01-host:9100", "validator-02-host:9100"]

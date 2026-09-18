@@ -14,6 +14,18 @@ docker compose -f deploy/grafana/stack/compose.yml up -d
 cometduty runs on the host — `host.docker.internal` bridges it into the
 containers. Adjust `prometheus.yml` targets for your ports.
 
+## What each scrape job covers
+
+- `cometduty` — validator signing, alerts, endpoint health, EVM lag/txpool/gas,
+  consensus round + mempool per node
+- `cometbft` — each node's own `:26660/metrics` (consensus votes, rounds, p2p)
+- `evm` — each node's geth-style exporter (`:8100` in-container). Coverage is
+  partial: rpc latency/cache meters are live, but `chain_head_*`, `discover_*`,
+  and `hashdb_*` meters exist in the registry without being updated — don't
+  build alerts on them
+- `node-exporter` *(commented)* — real host CPU/disk/mem needs node_exporter;
+  neither CometBFT nor EVM endpoints carry kernel stats
+
 ## Native fallback (no docker)
 
 If image pulls don't work, run both directly — the same configs apply with

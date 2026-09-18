@@ -49,6 +49,13 @@ type Exporter struct {
 	evmDown       *prometheus.GaugeVec
 	evmSyncing    *prometheus.GaugeVec
 	notifyResults *prometheus.CounterVec
+
+	mempoolTxs     *prometheus.GaugeVec
+	mempoolBytes   *prometheus.GaugeVec
+	consensusRound *prometheus.GaugeVec
+	evmTxPending   *prometheus.GaugeVec
+	evmTxQueued    *prometheus.GaugeVec
+	evmGasRatio    *prometheus.GaugeVec
 }
 
 // New registers all metrics.
@@ -150,6 +157,30 @@ func New(version string) *Exporter {
 			Name: "cometduty_notify_total",
 			Help: "notifier delivery attempts by destination and result — alert on result=error",
 		}, []string{"dest", "result"}),
+		mempoolTxs: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_mempool_txs",
+			Help: "unconfirmed txs in the node's consensus mempool (num_unconfirmed_txs)",
+		}, []string{"name", "chain_id", "endpoint"}),
+		mempoolBytes: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_mempool_txs_bytes",
+			Help: "total bytes of unconfirmed txs in the node's consensus mempool",
+		}, []string{"name", "chain_id", "endpoint"}),
+		consensusRound: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_consensus_round",
+			Help: "current consensus round — sustained elevation = leader churn",
+		}, []string{"name", "chain_id", "endpoint"}),
+		evmTxPending: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_evm_txpool_pending",
+			Help: "executable transactions waiting in the EVM txpool (txpool_status.pending)",
+		}, []string{"name", "chain_id"}),
+		evmTxQueued: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_evm_txpool_queued",
+			Help: "gapped-nonce transactions queued in the EVM txpool (txpool_status.queued)",
+		}, []string{"name", "chain_id"}),
+		evmGasRatio: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_evm_gas_used_ratio",
+			Help: "gasUsed/gasLimit of the latest EVM block — sustained ~1.0 is saturation",
+		}, []string{"name", "chain_id"}),
 	}
 	promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "cometduty_info",
@@ -247,6 +278,23 @@ func (e *Exporter) EvmHealth(name, chainID, endpoint string, height, lag int64, 
 		sync = 1
 	}
 	e.evmSyncing.With(l).Set(sync)
+}
+
+// NodeInternals exports per-node consensus internals: mempool backlog and the
+// live consensus round.
+func (e *Exporter) NodeInternals(name, chainID, endpoint, label string, mempoolTxs, mempoolBytes, consensusRound float64) {
+	l := prometheus.Labels{"name": name, "chain_id": chainID, "endpoint": endpoint}
+	e.mempoolTxs.With(l).Set(mempoolTxs)
+	e.mempoolBytes.With(l).Set(mempoolBytes)
+	e.consensusRound.With(l).Set(consensusRound)
+}
+
+// EvmInternals exports execution-layer internals: txpool depth and block fullness.
+func (e *Exporter) EvmInternals(name, chainID, endpoint string, txpoolPending, txpoolQueued int64, gasUsedRatio float64) {
+	l := prometheus.Labels{"name": name, "chain_id": chainID}
+	e.evmTxPending.With(l).Set(float64(txpoolPending))
+	e.evmTxQueued.With(l).Set(float64(txpoolQueued))
+	e.evmGasRatio.With(l).Set(gasUsedRatio)
 }
 
 // NotifyResult records one notifier delivery outcome. Wire it to the alert
