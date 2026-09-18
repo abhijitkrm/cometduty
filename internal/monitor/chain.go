@@ -26,6 +26,7 @@ type MetricsSink interface {
 	NodeCount(name, chainID string, total, unhealthy int)
 	Window(name, chainID, validator, moniker string, missed, window int64)
 	ActiveAlerts(name, chainID string, n int)
+	EvmHealth(name, chainID, endpoint string, height, lag int64, downSeconds float64, syncing bool)
 }
 
 // nodeState tracks a configured endpoint's health.
@@ -78,6 +79,15 @@ type Chain struct {
 	noNodesSince   time.Time
 	slashingOK     bool
 	lastSlashingAt time.Time
+
+	// EVM execution-layer state (only when cfg.EvmRPC is set)
+	evmDown      bool
+	evmDownSince time.Time
+	evmDownAlarm bool
+	evmHeight    int64
+	evmSyncing   bool
+	evmLastMsg   string
+	evmLagAlarm  bool
 }
 
 // NewChain builds a monitor for one chain. rootFn must return the current

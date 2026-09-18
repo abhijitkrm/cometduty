@@ -136,6 +136,11 @@ type ChainConfig struct {
 	// configured nodes fail. Not recommended for paging paths.
 	PublicFallback bool `yaml:"public_fallback"`
 
+	// EvmRPC is an optional EVM JSON-RPC endpoint for the same chain. When set,
+	// the monitor also watches execution-layer health: evm block height vs
+	// consensus height (execution lag), syncing, and reachability.
+	EvmRPC string `yaml:"evm_rpc"`
+
 	// Nodes are the RPC endpoints to use, tried in order.
 	Nodes []*NodeConfig `yaml:"nodes"`
 
@@ -171,6 +176,11 @@ type AlertConfig struct {
 	// New: alert when a configured RPC node falls more than lag_blocks behind.
 	LagBlocks  int  `yaml:"lag_blocks"`
 	LagEnabled bool `yaml:"lag_enabled"`
+
+	// EVM execution-layer alerts (only meaningful when chain evm_rpc is set).
+	EvmLagBlocks   int  `yaml:"evm_lag_blocks"` // consensus height minus evm height
+	EvmLagEnabled  bool `yaml:"evm_lag_enabled"`
+	EvmDownEnabled bool `yaml:"evm_down_enabled"` // evm_rpc unreachable
 
 	// Per-chain/per-validator destination overrides. The Enabled flag can
 	// selectively disable a destination for this scope, and the credential

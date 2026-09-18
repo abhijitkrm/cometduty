@@ -96,6 +96,7 @@ type Status struct {
 	NodeInfo struct {
 		Network string `json:"network"`
 		Moniker string `json:"moniker"`
+		Version string `json:"version"` // cometbft build version
 	} `json:"node_info"`
 	SyncInfo struct {
 		LatestBlockHeight Int64     `json:"latest_block_height"`
@@ -107,6 +108,53 @@ type Status struct {
 // NetInfo is the subset of /net_info we use (peer count).
 type NetInfo struct {
 	NPeers Int64 `json:"n_peers"`
+}
+
+// CommitSig is one entry in a block's last_commit signature set.
+type CommitSig struct {
+	BlockIDFlag      int    `json:"block_id_flag"`
+	ValidatorAddress string `json:"validator_address"`
+	Timestamp        string `json:"timestamp"`
+	Signature        string `json:"signature"`
+}
+
+// Commit is the subset of /commit we use — the signature set for height-1.
+type Commit struct {
+	SignedHeader struct {
+		Header struct {
+			Height          Int64  `json:"height"`
+			ProposerAddress string `json:"proposer_address"`
+		} `json:"header"`
+		Commit struct {
+			Height     int64       `json:"height,string"`
+			Signatures []CommitSig `json:"signatures"`
+		} `json:"commit"`
+	} `json:"signed_header"`
+	Canonical bool `json:"canonical"`
+}
+
+// Validator is one member of the active set.
+type Validator struct {
+	Address     string `json:"address"`
+	VotingPower Int64  `json:"voting_power"`
+}
+
+// Validators returns the active set for a height in signature order — the
+// last_commit signature array is positional: signatures[i] belongs to the
+// i-th validator of this list (absent entries carry an empty address).
+func (c *Client) Validators(ctx context.Context, height int64) ([]Validator, error) {
+	var out struct {
+		Validators []Validator `json:"validators"`
+		Total      Int64       `json:"total"`
+	}
+	params := map[string]any{"per_page": "200"}
+	if height > 0 {
+		params["height"] = strconv.FormatInt(height, 10)
+	}
+	if err := c.call(ctx, "validators", params, &out); err != nil {
+		return nil, err
+	}
+	return out.Validators, nil
 }
 
 // ABCIResponse is the result of /abci_query.
@@ -189,6 +237,20 @@ func (c *Client) NetInfo(ctx context.Context) (*NetInfo, error) {
 		return nil, err
 	}
 	return &n, nil
+}
+
+// Commit returns the signed header for a height (0 = latest). The commit's
+// signatures cover height-1 — CometBFT commits a block in the next block.
+func (c *Client) Commit(ctx context.Context, height int64) (*Commit, error) {
+	var r Commit
+	params := map[string]any{}
+	if height > 0 {
+		params["height"] = strconv.FormatInt(height, 10) // cometbft wants integers as strings
+	}
+	if err := c.call(ctx, "commit", params, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
 }
 
 // ABCIQuery performs an ABCI query. data is sent as hex (the encoding CometBFT

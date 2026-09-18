@@ -102,6 +102,11 @@ chains:
       lag_enabled: yes         # new: node falls behind head
       lag_blocks: 100
 
+      # EVM execution layer (only when evm_rpc is set on the chain):
+      evm_down_enabled: yes    # evm_rpc unreachable
+      evm_lag_enabled: yes     # execution behind consensus
+      evm_lag_blocks: 30       # comet height - eth_blockNumber
+
       # per-chain destination overrides (enabled + credentials):
       pagerduty: {enabled: yes}
       discord:   {enabled: yes}
@@ -110,6 +115,8 @@ chains:
       webhook:   {enabled: no}
       ntfy:      {enabled: no}
       opsgenie:  {enabled: no}
+
+    evm_rpc: http://localhost:8545   # optional: EVM JSON-RPC — enables execution-layer checks
 
     nodes:
       - url: tcp://localhost:26657

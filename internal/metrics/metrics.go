@@ -44,6 +44,10 @@ type Exporter struct {
 	endpointLag    *prometheus.GaugeVec
 	endpointPeers  *prometheus.GaugeVec
 
+	evmHeight     *prometheus.GaugeVec
+	evmLag        *prometheus.GaugeVec
+	evmDown       *prometheus.GaugeVec
+	evmSyncing    *prometheus.GaugeVec
 	notifyResults *prometheus.CounterVec
 }
 
@@ -126,6 +130,22 @@ func New(version string) *Exporter {
 			Name: "cometduty_endpoint_peers",
 			Help: "peer count reported by the endpoint",
 		}, endpointLabels),
+		evmHeight: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_evm_block_height",
+			Help: "latest executed EVM block reported by the configured evm_rpc endpoint",
+		}, []string{"name", "chain_id"}),
+		evmLag: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_evm_lag_blocks",
+			Help: "consensus height minus EVM-executed height — execution lag; nonzero means transactions aren't executing",
+		}, []string{"name", "chain_id"}),
+		evmDown: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_evm_endpoint_down_seconds",
+			Help: "how long the configured evm_rpc endpoint has been unreachable",
+		}, []string{"name", "chain_id", "endpoint"}),
+		evmSyncing: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_evm_syncing",
+			Help: "1 while eth_syncing reports an in-progress sync",
+		}, []string{"name", "chain_id"}),
 		notifyResults: promauto.NewCounterVec(prometheus.CounterOpts{
 			Name: "cometduty_notify_total",
 			Help: "notifier delivery attempts by destination and result — alert on result=error",
@@ -214,6 +234,19 @@ func (e *Exporter) NodeCount(name, chainID string, total, unhealthy int) {
 // ActiveAlerts implements monitor.MetricsSink.
 func (e *Exporter) ActiveAlerts(name, chainID string, n int) {
 	e.activeAlerts.With(prometheus.Labels{"name": name, "chain_id": chainID}).Set(float64(n))
+}
+
+// EvmHealth implements monitor.MetricsSink — execution-layer telemetry.
+func (e *Exporter) EvmHealth(name, chainID, endpoint string, height, lag int64, downSeconds float64, syncing bool) {
+	l := prometheus.Labels{"name": name, "chain_id": chainID}
+	e.evmHeight.With(l).Set(float64(height))
+	e.evmLag.With(l).Set(float64(lag))
+	e.evmDown.With(prometheus.Labels{"name": name, "chain_id": chainID, "endpoint": endpoint}).Set(downSeconds)
+	sync := 0.0
+	if syncing {
+		sync = 1
+	}
+	e.evmSyncing.With(l).Set(sync)
 }
 
 // NotifyResult records one notifier delivery outcome. Wire it to the alert

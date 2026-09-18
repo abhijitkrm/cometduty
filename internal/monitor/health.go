@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/abhijitkrm/cometduty/internal/alert"
+	"github.com/abhijitkrm/cometduty/internal/evm"
 	"github.com/abhijitkrm/cometduty/internal/rpc"
 )
 
@@ -33,6 +34,7 @@ func (c *Chain) probeAllNodes(ctx context.Context) {
 	chainID := c.cfg.ChainID
 	lagBlocks := int64(c.cfg.Alerts.LagBlocks)
 	lagEnabled := c.cfg.Alerts.LagEnabled
+	evmURL := c.cfg.EvmRPC
 	c.mu.Unlock()
 
 	// best known height = max observed across nodes (for lag detection)
@@ -48,6 +50,10 @@ func (c *Chain) probeAllNodes(ctx context.Context) {
 	}
 	wg.Wait()
 
+	if evmURL != "" {
+		c.probeEVM(ctx, evmURL)
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, n := range nodes {
@@ -60,10 +66,12 @@ func (c *Chain) probeAllNodes(ctx context.Context) {
 		bestHeight = c.lastHeight
 	}
 
-	anyUp := false
+	anyUp, unhealthy := false, 0
 	for _, n := range nodes {
 		if !n.down {
 			anyUp = true
+		} else {
+			unhealthy++
 		}
 		lag := int64(0)
 		if !n.down && bestHeight > 0 {
@@ -92,6 +100,53 @@ func (c *Chain) probeAllNodes(ctx context.Context) {
 	if !anyUp {
 		c.client = nil
 	}
+	if c.met != nil {
+		c.met.NodeCount(c.name, chainID, len(nodes), unhealthy)
+	}
+}
+
+// probeEVM checks the configured EVM JSON-RPC endpoint: latest executed height
+// and sync state. The gap between consensus height and EVM height is the
+// execution-lag signal — consensus producing blocks the EVM never runs is a
+// distinct outage (chain looks alive, transactions don't execute).
+func (c *Chain) probeEVM(ctx context.Context, url string) {
+	cl := evm.New(url, 8*time.Second)
+	ectx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	height, err := cl.BlockNumber(ectx)
+	cancel()
+	c.mu.Lock()
+	if err != nil {
+		if !c.evmDown {
+			c.evmDown, c.evmDownSince = true, time.Now()
+		}
+		c.evmLastMsg = "down: " + err.Error()
+		c.mu.Unlock()
+		return
+	}
+	c.evmDown, c.evmSyncing, c.evmLastMsg = false, false, ""
+	c.evmHeight = height
+	c.evmDownSince = time.Time{}
+	c.mu.Unlock()
+
+	sctx, scancel := context.WithTimeout(ctx, 5*time.Second)
+	syncing, _, serr := cl.Syncing(sctx)
+	scancel()
+	c.mu.Lock()
+	if serr == nil {
+		c.evmSyncing = syncing
+	}
+	lag := c.lastHeight - c.evmHeight
+	if lag < 0 {
+		lag = 0 // evm can briefly lead while the next consensus block finalizes
+	}
+	var downSec float64
+	if c.evmDown {
+		downSec = time.Since(c.evmDownSince).Seconds()
+	}
+	if c.met != nil {
+		c.met.EvmHealth(c.name, c.cfg.ChainID, url, c.evmHeight, lag, downSec, c.evmSyncing)
+	}
+	c.mu.Unlock()
 }
 
 // probeNode queries one endpoint and updates its state. Returns n for convenience.
@@ -229,6 +284,40 @@ func (c *Chain) watchLoop(ctx context.Context) {
 				nodeAlerted[key] = false
 				c.alert(cfg.ChainID, nil, key, true, "info",
 					fmt.Sprintf("RPC node %s recovered on %s", nodeLabel(n), cfg.ChainID))
+			}
+		}
+
+		// --- EVM execution-layer alarms (only when evm_rpc configured) ---
+		if cfg.EvmRPC != "" {
+			evmLag := c.lastHeight - c.evmHeight
+			if evmLag < 0 {
+				evmLag = 0
+			}
+			// evm endpoint down
+			key := "evm-down:" + cfg.EvmRPC
+			switch {
+			case a.EvmDownEnabled && c.evmDown && !c.evmDownSince.IsZero() &&
+				time.Since(c.evmDownSince) > time.Duration(root.NodeDownMin)*time.Minute && !c.evmDownAlarm:
+				c.evmDownAlarm = true
+				c.alert(cfg.ChainID, nil, key, false, "warning",
+					fmt.Sprintf("EVM RPC %s down for > %d minutes on %s: %s", cfg.EvmRPC, root.NodeDownMin, cfg.ChainID, c.evmLastMsg))
+			case !c.evmDown && (c.evmDownAlarm || c.eng.HasOpen(key)):
+				c.evmDownAlarm = false
+				c.alert(cfg.ChainID, nil, key, true, "info",
+					fmt.Sprintf("EVM RPC %s recovered on %s", cfg.EvmRPC, cfg.ChainID))
+			}
+			// execution lag — only meaningful while the endpoint is up
+			key = "evm-lag:" + cfg.EvmRPC
+			switch {
+			case a.EvmLagEnabled && !c.evmDown && !c.evmSyncing && c.evmHeight > 0 &&
+				a.EvmLagBlocks > 0 && evmLag > int64(a.EvmLagBlocks) && !c.evmLagAlarm:
+				c.evmLagAlarm = true
+				c.alert(cfg.ChainID, nil, key, false, "warning",
+					fmt.Sprintf("EVM execution is %d blocks behind consensus on %s (evm %d, comet %d)", evmLag, cfg.ChainID, c.evmHeight, c.lastHeight))
+			case (!a.EvmLagEnabled || evmLag <= int64(a.EvmLagBlocks)) && (c.evmLagAlarm || c.eng.HasOpen(key)):
+				c.evmLagAlarm = false
+				c.alert(cfg.ChainID, nil, key, true, "info",
+					fmt.Sprintf("EVM execution caught up on %s (lag %d)", cfg.ChainID, evmLag))
 			}
 		}
 

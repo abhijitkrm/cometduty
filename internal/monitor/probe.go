@@ -11,6 +11,70 @@ import (
 	"github.com/abhijitkrm/cometduty/internal/rpc"
 )
 
+// ResolvedValidator is a validator's on-chain identity as the monitor sees
+// it — used by `status` to classify signatures without starting the monitor.
+type ResolvedValidator struct {
+	Valoper    string
+	Moniker    string
+	Valcons    string
+	ConsHex    string
+	Bonded     bool
+	Jailed     bool
+	Tombstoned bool
+	Missed     int64
+	Window     int64
+	Err        error
+}
+
+// ResolveValidators resolves each configured validator's consensus address,
+// moniker, and slashing record via the given client. Same code path as
+// refreshValInfo; per-validator errors are reported inline, not fatal.
+func ResolveValidators(ctx context.Context, cl *rpc.Client, vcs []config.ValidatorConfig) []ResolvedValidator {
+	out := make([]ResolvedValidator, 0, len(vcs))
+	for _, vc := range vcs {
+		rv := ResolvedValidator{Valoper: vc.ValoperAddress, Moniker: vc.Label}
+		if vc.ValconsOverride != "" || strings.Contains(vc.ValoperAddress, "valcons") {
+			addr, valcons, err := resolveConsAddress(vc.ValoperAddress, vc.ValconsOverride, vc.ConsPrefix, nil)
+			if err != nil {
+				rv.Err = err
+				out = append(out, rv)
+				continue
+			}
+			rv.Valcons, rv.ConsHex, rv.Bonded = valcons, strings.ToUpper(fmt.Sprintf("%X", addr)), true
+			out = append(out, rv)
+			continue
+		}
+		qctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		consAddr, moniker, jailed, bonded, err := getValidatorRecord(qctx, cl, vc.ValoperAddress)
+		cancel()
+		if err != nil {
+			rv.Err = err
+			out = append(out, rv)
+			continue
+		}
+		addr, valcons, err := resolveConsAddress(vc.ValoperAddress, vc.ValconsOverride, vc.ConsPrefix, consAddr)
+		if err != nil {
+			rv.Err = err
+			out = append(out, rv)
+			continue
+		}
+		rv.ConsHex = strings.ToUpper(fmt.Sprintf("%X", addr))
+		rv.Valcons = valcons
+		rv.Bonded, rv.Jailed = bonded, jailed
+		if rv.Moniker == "" {
+			rv.Moniker = moniker
+		}
+		sctx, scancel := context.WithTimeout(ctx, 10*time.Second)
+		tomb, missed, serr := getSigningInfo(sctx, cl, valcons)
+		scancel()
+		if serr == nil {
+			rv.Tombstoned, rv.Missed = tomb, missed
+		}
+		out = append(out, rv)
+	}
+	return out
+}
+
 // ProbeResult is one line of a `validate --live` report.
 type ProbeResult struct {
 	Subject string // node URL or valoper address

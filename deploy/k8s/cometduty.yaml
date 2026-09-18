@@ -1,0 +1,170 @@
+# Minimal Kubernetes manifests for cometduty.
+#
+# Layout: ConfigMap carries config.yml; the statefile + alert history live on a
+# PVC so restarts (and pod reschedules) don't reflood alerts; a Service exposes
+# :28686 (/metrics, /healthz, /readyz) for scraping and probes.
+#
+# HA note: run exactly ONE replica. Two live instances double-notify — the
+# alert engine dedups in-process only. Recreate strategy keeps a second pod
+# from ever running concurrently; a standby is fine.
+#
+#   kubectl apply -f deploy/k8s/cometduty.yaml
+#   kubectl -n monitoring create secret generic cometduty-secrets \
+#     --from-literal=PD_ROUTING_KEY=... --from-literal=TELEGRAM_TOKEN=...
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cometduty-config
+  namespace: monitoring
+data:
+  config.yml: |
+    prometheus_enabled: yes
+    prometheus_listen_port: 28686
+    prometheus_bind: 0.0.0.0
+    node_down_alert_minutes: 3
+    node_down_alert_severity: critical
+    flap_suppression_minutes: 10
+    resolve_alerts_on_start: false
+    # notifier credentials come from the cometduty-secrets Secret via env
+    webhook:
+      enabled: no
+      url: https://example.com/hook
+    chains:
+      "Example":
+        chain_id: example-1
+        nodes:
+          - url: http://rpc-node:26657
+            alert_if_down: true
+        alerts:
+          stalled_enabled: true
+          stalled_minutes: 5
+          consecutive_enabled: true
+          consecutive_missed: 5
+          percentage_enabled: true
+          percentage_missed: 5
+          alert_if_inactive: true
+          alert_if_no_servers: true
+          lag_enabled: true
+          lag_blocks: 100
+        validators:
+          - valoper_address: cosmosvaloper1xxxx
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cometduty-state
+  namespace: monitoring
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cometduty
+  namespace: monitoring
+  labels:
+    app: cometduty
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # never two pods at once — alert dedup is in-process
+  selector:
+    matchLabels:
+      app: cometduty
+  template:
+    metadata:
+      labels:
+        app: cometduty
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+      containers:
+        - name: cometduty
+          image: ghcr.io/abhijitkrm/cometduty:latest
+          args:
+            - -f
+            - /etc/cometduty/config.yml
+            - --state
+            - /data/cometduty-state.json
+            - --alert-log
+            - /data/cometduty-alerts.jsonl
+          envFrom:
+            - secretRef:
+                name: cometduty-secrets
+                optional: true # env expansion in config.yml references these
+          ports:
+            - name: metrics
+              containerPort: 28686
+          volumeMounts:
+            - name: config
+              mountPath: /etc/cometduty
+              readOnly: true
+            - name: data
+              mountPath: /data
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz # fails until blocks are actually flowing
+              port: metrics
+            periodSeconds: 15
+            failureThreshold: 4
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+      volumes:
+        - name: config
+          configMap:
+            name: cometduty-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: cometduty-state
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cometduty
+  namespace: monitoring
+  labels:
+    app: cometduty
+spec:
+  selector:
+    app: cometduty
+  ports:
+    - name: metrics
+      port: 28686
+      targetPort: metrics
+---
+# prometheus-operator scrape config; for plain prometheus add a scrape_config
+# for the cometduty service instead.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cometduty
+  namespace: monitoring
+  labels:
+    app: cometduty
+spec:
+  selector:
+    matchLabels:
+      app: cometduty
+  endpoints:
+    - port: metrics
+      interval: 15s
+      path: /metrics
