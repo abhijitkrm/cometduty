@@ -190,6 +190,10 @@ bounded retry on failed sends. Every delivery attempt is counted in
 - `cometduty_evm_txpool_pending`, `cometduty_evm_txpool_queued`, `cometduty_evm_gas_used_ratio` — EVM internals via `txpool_status` / `eth_getBlockByNumber`
 - `cometduty_mempool_txs`, `cometduty_mempool_txs_bytes`, `cometduty_consensus_round` — per-node consensus internals via `num_unconfirmed_txs` / `consensus_state`
 - `cometduty_node_cpu_percent`, `cometduty_node_memory_bytes` — host stats scraped off each node's own prometheus endpoint (per-node `metrics_url`)
+- `cometduty_validator_voting_power`, `cometduty_validator_proposer_priority` — consensus set weight per monitored validator via `/validators`
+- `cometduty_validator_jailed`, `cometduty_validator_tombstoned`, `cometduty_validator_bonded`, `cometduty_validator_bonded_tokens`, `cometduty_slashing_jailed_until_seconds` — staking/slashing state per validator
+- `cometduty_node_info{moniker,version,network}` — per-endpoint identity (always 1; labels carry the info)
+- `cometduty_evm_gas_price` — `eth_gasPrice` in wei (when `evm_rpc` is set)
 - `cometduty_notify_total{dest,result}` — notifier delivery attempts; alert on `result="error"`
 - `cometduty_last_block_height`, `cometduty_time_since_last_block`, `cometduty_active_alerts`, `cometduty_total_(un)healthy_endpoints`
 

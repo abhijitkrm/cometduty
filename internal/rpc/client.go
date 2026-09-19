@@ -254,6 +254,33 @@ func (c *Client) ABCIQuery(ctx context.Context, path string, data []byte) (*ABCI
 	return &r.Response, nil
 }
 
+// RPCValidator is one entry in the consensus validator set at a height.
+type RPCValidator struct {
+	Address          string `json:"address"` // hex consensus address
+	VotingPower      Int64  `json:"voting_power"`
+	ProposerPriority Int64  `json:"proposer_priority"`
+}
+
+// Validators returns the bonded consensus set — voting power (post
+// power-reduction consensus weight) and proposer priority per address.
+func (c *Client) Validators(ctx context.Context) ([]RPCValidator, error) {
+	out := []RPCValidator{}
+	for page := 1; ; page++ {
+		var r struct {
+			Validators []RPCValidator `json:"validators"`
+			Total      Int64          `json:"total"`
+		}
+		params := map[string]any{"page": strconv.Itoa(page), "per_page": "100"}
+		if err := c.call(ctx, "validators", params, &r); err != nil {
+			return nil, err
+		}
+		out = append(out, r.Validators...)
+		if len(out) >= int(r.Total) || len(r.Validators) == 0 {
+			return out, nil
+		}
+	}
+}
+
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s

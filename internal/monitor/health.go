@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"strconv"
 	"strings"
@@ -89,6 +90,9 @@ func (c *Chain) probeAllNodes(ctx context.Context) {
 				downSec = time.Since(n.downSince).Seconds()
 			}
 			c.met.NodeHealth(c.name, chainID, nodeLabel(n), n.cfg.URL, downSec, float64(lag), float64(n.peers))
+			if n.version != "" {
+				c.met.NodeInfo(c.name, chainID, n.cfg.URL, n.moniker, n.version, n.network)
+			}
 		}
 
 		// lag alerting
@@ -193,6 +197,9 @@ func (c *Chain) probeEVM(ctx context.Context, url string) {
 	gctx, gcancel := context.WithTimeout(ctx, 5*time.Second)
 	ratio, gerr := cl.GasUsedRatio(gctx)
 	gcancel()
+	pctx, pcancel := context.WithTimeout(ctx, 5*time.Second)
+	gp, gperr := cl.GasPrice(pctx)
+	pcancel()
 
 	c.mu.Lock()
 	if terr == nil {
@@ -203,6 +210,10 @@ func (c *Chain) probeEVM(ctx context.Context, url string) {
 	}
 	if c.met != nil {
 		c.met.EvmInternals(c.name, c.cfg.ChainID, url, c.evmPending, c.evmQueued, c.evmGasRatio)
+		if gperr == nil {
+			gf, _ := new(big.Float).SetInt(gp).Float64()
+			c.met.EvmGasPrice(c.name, c.cfg.ChainID, url, gf)
+		}
 	}
 	if txpoolAlert > 0 && c.evmQueued > txpoolAlert && !c.evmTxpoolAlarm {
 		c.evmTxpoolAlarm = true
@@ -242,6 +253,7 @@ func (c *Chain) probeNode(ctx context.Context, n *nodeState, chainID string) *no
 	}
 	c.mu.Lock()
 	n.height = int64(st.SyncInfo.LatestBlockHeight)
+	n.moniker, n.version, n.network = st.NodeInfo.Moniker, st.NodeInfo.Version, st.NodeInfo.Network
 	if st.SyncInfo.CatchingUp {
 		n.down, n.syncing, n.lastMsg = true, true, "catching up"
 		c.mu.Unlock()

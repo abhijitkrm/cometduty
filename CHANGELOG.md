@@ -3,6 +3,36 @@
 All notable changes to cometduty are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Metrics
+
+- `cometduty_validator_voting_power` / `cometduty_validator_proposer_priority`
+  — consensus set weight and propose likelihood via `/validators`, matched to
+  monitored validators by consensus address
+- `cometduty_validator_jailed` / `cometduty_validator_tombstoned` /
+  `cometduty_validator_bonded` / `cometduty_validator_bonded_tokens` /
+  `cometduty_slashing_jailed_until_seconds` — staking + slashing state per
+  monitored validator (`jailed_until` = when unjail becomes possible)
+- `cometduty_node_info{moniker,version,network}` — per-endpoint identity
+  info metric; version skew across the fleet is one query away
+- `cometduty_evm_gas_price` — `eth_gasPrice` in wei
+- New `Validators` RPC client method (paged `/validators` fetch)
+
+### Grafana
+
+- 15 new dashboard panels: precommit stake %, consensus vote anomalies
+  (missing/byzantine/dup/late), block interval, CometBFT peers, validator
+  voting power / set state / proposer priority, node CPU+memory, EVM gas
+  price, go goroutines — all from already-scraped `:26660` series plus the
+  new cometduty metrics
+- Host row (disk/cpu/mem/load) fed by `node_exporter` — the compose stack's
+  `node-exporter` job is now live against `host.docker.internal:9101`
+- Infinity datasource (`yesoreyeram-infinity-datasource`) provisioned in the
+  stack + four direct-RPC table panels: peers, validator set, node identity,
+  EVM txpool (POST `txpool_status`). Panels ship with `localhost` URLs —
+  edit per deployment
+
 ## [0.1.0] — 2026-09-19
 
 First tagged release.

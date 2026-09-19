@@ -31,6 +31,10 @@ type MetricsSink interface {
 	NodeInternals(name, chainID, endpoint, label string, mempoolTxs, mempoolBytes, consensusRound float64)
 	EvmInternals(name, chainID, endpoint string, txpoolPending, txpoolQueued int64, gasUsedRatio float64)
 	NodeSysstats(name, chainID, endpoint string, cpuPct, memBytes float64)
+	ValidatorState(name, chainID, validator, moniker string, jailed, tombstoned, bonded bool, jailedUntil int64, bondedTokens float64)
+	VotingPower(name, chainID, validator, moniker string, power, proposerPriority int64)
+	NodeInfo(name, chainID, endpoint, moniker, version, network string)
+	EvmGasPrice(name, chainID, endpoint string, wei float64)
 }
 
 // nodeState tracks a configured endpoint's health.
@@ -42,8 +46,11 @@ type nodeState struct {
 	downSince time.Time
 	height    int64
 	peers     int64
-	alerted   bool // down alert currently open
-	lagged    bool // lag alert currently open
+	moniker   string // from /status node_info
+	version   string // cometbft build version
+	network   string // reported chain id (matches config when healthy)
+	alerted   bool   // down alert currently open
+	lagged    bool   // lag alert currently open
 
 	mempoolTxs     int64
 	mempoolBytes   int64
@@ -359,6 +366,7 @@ func (c *Chain) refreshValInfo(ctx context.Context, first bool) {
 			Moniker: moniker, Bonded: bonded, Jailed: jailed, Tokens: tokens,
 			ConsAddr: addr, ConsHex: hexAddr, Valcons: valcons,
 			Missed: t.info.Missed, Window: t.info.Window, Tombstoned: t.info.Tombstoned,
+			JailedUntil: t.info.JailedUntil,
 		}
 		// stake-change alert: bonded tokens moved more than the threshold
 		if pct := int64(c.cfg.Alerts.StakeChangePct); pct > 0 && t.info.Tokens != "" && tokens != "" && t.info.Tokens != tokens {
@@ -382,7 +390,7 @@ func (c *Chain) refreshValInfo(ctx context.Context, first bool) {
 		// slashing info — skip entirely on chains without the module
 		if slashingOK {
 			sctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			tomb, missed, err := getSigningInfo(sctx, cl, valcons)
+			tomb, missed, ju, err := getSigningInfo(sctx, cl, valcons)
 			cancel()
 			switch {
 			case errors.Is(err, errNoSlashingModule):
@@ -394,7 +402,7 @@ func (c *Chain) refreshValInfo(ctx context.Context, first bool) {
 				c.log.Debug("signing info query failed", "err", err)
 			default:
 				c.mu.Lock()
-				t.info.Tombstoned, t.info.Missed = tomb, missed
+				t.info.Tombstoned, t.info.Missed, t.info.JailedUntil = tomb, missed, ju
 				c.mu.Unlock()
 			}
 			c.mu.Lock()
@@ -414,7 +422,28 @@ func (c *Chain) refreshValInfo(ctx context.Context, first bool) {
 		}
 		c.mu.Lock()
 		if c.met != nil {
+			var tok float64
+			if f, ok := new(big.Float).SetString(t.info.Tokens); ok {
+				tok, _ = f.Float64()
+			}
 			c.met.Window(c.name, c.cfg.ChainID, valcons, t.info.Moniker, t.info.Missed, t.info.Window)
+			c.met.ValidatorState(c.name, c.cfg.ChainID, valcons, t.info.Moniker,
+				t.info.Jailed, t.info.Tombstoned, t.info.Bonded, t.info.JailedUntil, tok)
+		}
+		c.mu.Unlock()
+	}
+
+	// consensus voting power + proposer priority — one call for the whole set
+	vctx, vcancel := context.WithTimeout(ctx, 10*time.Second)
+	vals, verr := cl.Validators(vctx)
+	vcancel()
+	if verr == nil && c.met != nil {
+		c.mu.Lock()
+		for _, rv := range vals {
+			if t, ok := c.byAddr[strings.ToUpper(rv.Address)]; ok && t.info != nil {
+				c.met.VotingPower(c.name, c.cfg.ChainID, t.info.Valcons, t.info.Moniker,
+					int64(rv.VotingPower), int64(rv.ProposerPriority))
+			}
 		}
 		c.mu.Unlock()
 	}

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"strconv"
 	"strings"
@@ -67,6 +68,19 @@ func (c *Client) call(ctx context.Context, method string, params []any, out any)
 		return fmt.Errorf("evm rpc %s: %s", method, r.Error.Message)
 	}
 	return json.Unmarshal(r.Result, out)
+}
+
+// GasPrice returns eth_gasPrice in wei — fee pressure on the execution layer.
+func (c *Client) GasPrice(ctx context.Context) (*big.Int, error) {
+	var s string
+	if err := c.call(ctx, "eth_gasPrice", nil, &s); err != nil {
+		return nil, err
+	}
+	v, ok := new(big.Int).SetString(strings.TrimPrefix(s, "0x"), 16)
+	if !ok {
+		return nil, fmt.Errorf("bad gas price %q", s)
+	}
+	return v, nil
 }
 
 func hexInt(s string) (int64, error) {

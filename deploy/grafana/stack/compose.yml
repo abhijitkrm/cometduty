@@ -24,6 +24,8 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: cometduty
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
+      # Infinity datasource — direct RPC queries for the table panels
+      GF_INSTALL_PLUGINS: yesoreyeram-infinity-datasource
     volumes:
       - ./provisioning:/etc/grafana/provisioning:ro
       - ./dashboards:/var/lib/grafana/dashboards:ro

@@ -58,6 +58,16 @@ type Exporter struct {
 	evmGasRatio    *prometheus.GaugeVec
 	nodeCPUPct     *prometheus.GaugeVec
 	nodeMemBytes   *prometheus.GaugeVec
+
+	valJailed      *prometheus.GaugeVec
+	valTombstoned  *prometheus.GaugeVec
+	valBonded      *prometheus.GaugeVec
+	valJailedUntil *prometheus.GaugeVec
+	valTokens      *prometheus.GaugeVec
+	valPower       *prometheus.GaugeVec
+	valPriority    *prometheus.GaugeVec
+	nodeInfo       *prometheus.GaugeVec
+	evmGasPrice    *prometheus.GaugeVec
 }
 
 // New registers all metrics.
@@ -190,6 +200,42 @@ func New(version string) *Exporter {
 		nodeMemBytes: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cometduty_node_memory_bytes",
 			Help: "node process resident memory in bytes, from its own metrics endpoint (metrics_url)",
+		}, []string{"name", "chain_id", "endpoint"}),
+		valJailed: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_validator_jailed",
+			Help: "1 while the validator is jailed (staking module state)",
+		}, chainLabels),
+		valTombstoned: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_validator_tombstoned",
+			Help: "1 when the validator is tombstoned — permanent, cannot unjail",
+		}, chainLabels),
+		valBonded: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_validator_bonded",
+			Help: "1 while the validator is in the bonded (active) set",
+		}, chainLabels),
+		valJailedUntil: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_slashing_jailed_until_seconds",
+			Help: "unix timestamp when the validator may unjail (signing_info.jailed_until); 0 when not jailed",
+		}, chainLabels),
+		valTokens: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_validator_bonded_tokens",
+			Help: "bonded stake in the chain's base denom (staking module tokens)",
+		}, chainLabels),
+		valPower: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_validator_voting_power",
+			Help: "consensus voting power from /validators — determines propose/sign weight",
+		}, chainLabels),
+		valPriority: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_validator_proposer_priority",
+			Help: "proposer priority from /validators — relative chance to propose next",
+		}, chainLabels),
+		nodeInfo: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_node_info",
+			Help: "node identity from /status — always 1, labels carry moniker/version/network",
+		}, []string{"name", "chain_id", "endpoint", "moniker", "version", "network"}),
+		evmGasPrice: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_evm_gas_price",
+			Help: "eth_gasPrice in wei — fee pressure on the execution layer",
 		}, []string{"name", "chain_id", "endpoint"}),
 	}
 	promauto.NewGauge(prometheus.GaugeOpts{
@@ -363,4 +409,36 @@ func Serve(ctxDone <-chan struct{}, bind string, port int, ready func() (bool, [
 		_ = srv.Close()
 	}()
 	return srv.ListenAndServe()
+}
+
+func (e *Exporter) ValidatorState(name, chainID, validator, moniker string, jailed, tombstoned, bonded bool, jailedUntil int64, bondedTokens float64) {
+	l := prometheus.Labels{"name": name, "chain_id": chainID, "validator": validator, "moniker": moniker}
+	b2f := func(b bool) float64 {
+		if b {
+			return 1
+		}
+		return 0
+	}
+	e.valJailed.With(l).Set(b2f(jailed))
+	e.valTombstoned.With(l).Set(b2f(tombstoned))
+	e.valBonded.With(l).Set(b2f(bonded))
+	e.valJailedUntil.With(l).Set(float64(jailedUntil))
+	e.valTokens.With(l).Set(bondedTokens)
+}
+
+func (e *Exporter) VotingPower(name, chainID, validator, moniker string, power, proposerPriority int64) {
+	l := prometheus.Labels{"name": name, "chain_id": chainID, "validator": validator, "moniker": moniker}
+	e.valPower.With(l).Set(float64(power))
+	e.valPriority.With(l).Set(float64(proposerPriority))
+}
+
+func (e *Exporter) NodeInfo(name, chainID, endpoint, moniker, version, network string) {
+	e.nodeInfo.With(prometheus.Labels{
+		"name": name, "chain_id": chainID, "endpoint": endpoint,
+		"moniker": moniker, "version": version, "network": network,
+	}).Set(1)
+}
+
+func (e *Exporter) EvmGasPrice(name, chainID, endpoint string, wei float64) {
+	e.evmGasPrice.With(prometheus.Labels{"name": name, "chain_id": chainID, "endpoint": endpoint}).Set(wei)
 }

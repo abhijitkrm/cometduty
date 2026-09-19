@@ -65,7 +65,7 @@ func ResolveValidators(ctx context.Context, cl *rpc.Client, vcs []config.Validat
 			rv.Moniker = moniker
 		}
 		sctx, scancel := context.WithTimeout(ctx, 10*time.Second)
-		tomb, missed, serr := getSigningInfo(sctx, cl, valcons)
+		tomb, missed, _, serr := getSigningInfo(sctx, cl, valcons)
 		scancel()
 		if serr == nil {
 			rv.Tombstoned, rv.Missed = tomb, missed
@@ -165,7 +165,7 @@ func ProbeChain(ctx context.Context, cc *config.ChainConfig) []ProbeResult {
 
 		// slashing info is optional — enrich when the module exists
 		sctx, scancel := context.WithTimeout(ctx, 10*time.Second)
-		tomb, missed, serr := getSigningInfo(sctx, client, valcons)
+		tomb, missed, _, serr := getSigningInfo(sctx, client, valcons)
 		scancel()
 		switch {
 		case errors.Is(serr, errNoSlashingModule):

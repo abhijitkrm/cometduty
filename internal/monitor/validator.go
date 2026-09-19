@@ -18,16 +18,17 @@ import (
 
 // ValInfo is the periodically-refreshed on-chain state for one validator.
 type ValInfo struct {
-	Moniker    string
-	Bonded     bool
-	Jailed     bool
-	Tombstoned bool
-	Tokens     string // bonded stake (delegations move this)
-	Missed     int64  // chain-reported missed counter for the current window
-	Window     int64  // signed blocks window
-	ConsAddr   []byte
-	ConsHex    string // upper-case hex, matches vote/block signature data
-	Valcons    string // bech32 consensus address
+	Moniker     string
+	Bonded      bool
+	Jailed      bool
+	Tombstoned  bool
+	Tokens      string // bonded stake (delegations move this)
+	Missed      int64  // chain-reported missed counter for the current window
+	Window      int64  // signed blocks window
+	JailedUntil int64  // unix ts until unjail is allowed; 0 when not jailed
+	ConsAddr    []byte
+	ConsHex     string // upper-case hex, matches vote/block signature data
+	Valcons     string // bech32 consensus address
 }
 
 // Non-standard valoper→valcons prefix pairs that can't be derived mechanically.
@@ -162,29 +163,33 @@ func listValidators(ctx context.Context, c *rpc.Client) ([]setEntry, error) {
 	return entries, nil
 }
 
-// getSigningInfo fetches tombstoned + missed counter. Returns
-// errNoSlashingModule when the chain lacks x/slashing.
+// getSigningInfo fetches tombstoned, missed counter, and jailed_until.
+// Returns errNoSlashingModule when the chain lacks x/slashing.
 var errNoSlashingModule = errors.New("slashing module not available on this chain")
 
-func getSigningInfo(ctx context.Context, c *rpc.Client, valcons string) (tombstoned bool, missed int64, err error) {
+func getSigningInfo(ctx context.Context, c *rpc.Client, valcons string) (tombstoned bool, missed, jailedUntil int64, err error) {
 	req := &slashingv1beta1.QuerySigningInfoRequest{ConsAddress: valcons}
 	b, err := proto.Marshal(req)
 	if err != nil {
-		return false, 0, err
+		return false, 0, 0, err
 	}
 	resp, err := c.ABCIQuery(ctx, pathSlashingInfo, b)
 	if err != nil {
 		if isMissingModuleErr(err) {
-			return false, 0, errNoSlashingModule
+			return false, 0, 0, errNoSlashingModule
 		}
-		return false, 0, err
+		return false, 0, 0, err
 	}
 	out := &slashingv1beta1.QuerySigningInfoResponse{}
 	if err := proto.Unmarshal(resp.Value, out); err != nil {
-		return false, 0, err
+		return false, 0, 0, err
 	}
 	info := out.GetValSigningInfo()
-	return info.GetTombstoned(), info.GetMissedBlocksCounter(), nil
+	var ju int64
+	if t := info.GetJailedUntil(); t != nil {
+		ju = t.AsTime().Unix()
+	}
+	return info.GetTombstoned(), info.GetMissedBlocksCounter(), ju, nil
 }
 
 func getSlashingWindow(ctx context.Context, c *rpc.Client) (int64, error) {
