@@ -113,6 +113,8 @@ the monitor end-to-end.
   ConfigMap, PVC for state + alert log, Prometheus ServiceMonitor,
   `/readyz` readiness probe
 - `deploy/docker-compose.yml`, `deploy/cometduty.service`
+- `scripts/install.sh` — checksum-verified release installer;
+  `docs/INSTALL.md` covering script, binaries, `go install`, docker
 - Multi-arch container image (`ghcr.io/abhijitkrm/cometduty`), distroless
   nonroot; GoReleaser pipeline building darwin/linux amd64+arm64 binaries,
   archives, checksums, and images

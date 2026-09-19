@@ -72,6 +72,9 @@ choice.
 ## Install
 
 ```sh
+# script — verifies checksums, picks your os/arch
+curl -fsSL https://raw.githubusercontent.com/abhijitkrm/cometduty/main/scripts/install.sh | sh
+
 # from source (Go 1.26+)
 go install github.com/abhijitkrm/cometduty/cmd/cometduty@latest
 
@@ -79,6 +82,9 @@ go install github.com/abhijitkrm/cometduty/cmd/cometduty@latest
 docker run -v $PWD/config.yml:/config/config.yml:ro -v cd-data:/data \
   -p 28686:28686 ghcr.io/abhijitkrm/cometduty:latest
 ```
+
+Full guide — binaries, verification, docker, building from source:
+[docs/INSTALL.md](docs/INSTALL.md).
 
 Behind a broken registry proxy? `deploy/Dockerfile.local` packages a
 natively built static binary on alpine — no base-image pull needed:
