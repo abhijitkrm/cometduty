@@ -1,0 +1,9 @@
+# Release image — used by goreleaser's dockers section. The pipeline builds
+# the binary first; this stage only packages it (goreleaser's build context
+# contains ./cometduty, not the source tree). For a source build use the
+# root Dockerfile; for a pull-free local build use deploy/Dockerfile.local.
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY cometduty /cometduty
+USER nonroot:nonroot
+EXPOSE 28686
+ENTRYPOINT ["/cometduty", "-f", "/config/config.yml", "--state", "/data/state.json", "--alert-log", "/data/alerts.jsonl"]

@@ -27,7 +27,7 @@ dockers:
   - image_templates:
       - "ghcr.io/abhijitkrm/cometduty:{{ .Version }}-amd64"
       - "ghcr.io/abhijitkrm/cometduty:latest-amd64"
-    dockerfile: Dockerfile
+    dockerfile: deploy/Dockerfile.release
     use: buildx
     build_flag_templates:
       - "--platform=linux/amd64"
@@ -35,7 +35,7 @@ dockers:
   - image_templates:
       - "ghcr.io/abhijitkrm/cometduty:{{ .Version }}-arm64"
       - "ghcr.io/abhijitkrm/cometduty:latest-arm64"
-    dockerfile: Dockerfile
+    dockerfile: deploy/Dockerfile.release
     use: buildx
     build_flag_templates:
       - "--platform=linux/arm64"

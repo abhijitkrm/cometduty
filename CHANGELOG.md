@@ -3,7 +3,9 @@
 All notable changes to cometduty are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.1.0] — first tagged release
+## [0.1.0] — 2026-09-19
+
+First tagged release.
 
 Ground-up rewrite of the deprecated
 [tenderduty](https://github.com/blockpane/tenderduty) v2, built Cosmos-EVM
