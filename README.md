@@ -1,4 +1,5 @@
 <div align="center">
+  <img src="cometduty.jpg" alt="cometduty" width="1200" />
   <h1>cometduty</h1>
   <p><b>Monitoring and alerting for Cosmos-EVM validators</b></p>
   <p>Know the moment your validator misses a block — before the chain jails it.</p>
