@@ -77,6 +77,9 @@ type Exporter struct {
 
 	nodeDiskFree     *prometheus.GaugeVec
 	nodeSignerHeight *prometheus.GaugeVec
+
+	logLines   *prometheus.CounterVec
+	logMatches *prometheus.CounterVec
 }
 
 // New registers all metrics.
@@ -266,6 +269,14 @@ func New(version string) *Exporter {
 			Name: "cometduty_node_signer_height",
 			Help: "height recorded in priv_validator_state.json — the last block this key signed",
 		}, epValLabels),
+		logLines: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: "cometduty_log_lines_total",
+			Help: "log lines tail-read per node, split by parsed level when present",
+		}, []string{"name", "chain_id", "endpoint", "validator", "level"}),
+		logMatches: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: "cometduty_log_matches_total",
+			Help: "log lines matching an alert rule, by rule name and severity",
+		}, []string{"name", "chain_id", "endpoint", "validator", "rule", "severity"}),
 	}
 	promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "cometduty_info",
@@ -487,4 +498,20 @@ func (e *Exporter) NodeLocal(name, chainID, endpoint, validator string, diskFree
 	l := prometheus.Labels{"name": name, "chain_id": chainID, "endpoint": endpoint, "validator": validator}
 	e.nodeDiskFree.With(l).Set(diskFreeBytes)
 	e.nodeSignerHeight.With(l).Set(signerHeight)
+}
+
+// LogLine counts tail-read log lines; level carries the parsed severity when
+// the line has one ("" otherwise) — drives the errors-by-module panel.
+func (e *Exporter) LogLine(name, chainID, endpoint, validator, level string) {
+	e.logLines.With(prometheus.Labels{
+		"name": name, "chain_id": chainID, "endpoint": endpoint, "validator": validator, "level": level,
+	}).Inc()
+}
+
+// LogMatch counts lines that matched an alert rule.
+func (e *Exporter) LogMatch(name, chainID, endpoint, validator, rule, severity string) {
+	e.logMatches.With(prometheus.Labels{
+		"name": name, "chain_id": chainID, "endpoint": endpoint, "validator": validator,
+		"rule": rule, "severity": severity,
+	}).Inc()
 }

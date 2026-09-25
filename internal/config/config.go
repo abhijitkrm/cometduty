@@ -243,10 +243,34 @@ type NodeConfig struct {
 	Validator   string            `yaml:"validator"`   // moniker of the validator this node serves — joins node metrics to validator metrics
 	EvmRPC      string            `yaml:"evm_rpc"`     // optional: this node's own EVM JSON-RPC (per-validator execution checks)
 	HomeDir     string            `yaml:"home"`        // optional: read-only mount of the node's home dir — enables local checks (signer state, disk)
+	Logs        *LogConfig        `yaml:"logs"`        // optional: tail container/file logs for known-bad patterns
 	AlertIfDown bool              `yaml:"alert_if_down"`
 	InsecureTLS bool              `yaml:"insecure_tls"` // allow self-signed certs
 	Headers     map[string]string `yaml:"headers"`      // extra HTTP headers, e.g. Authorization
 	DisableVote bool              `yaml:"disable_vote"` // don't use this node for vote subscriptions
+}
+
+// LogConfig turns on pattern-based log alerting for a node. cometduty watches
+// for known signatures (CONSENSUS FAILURE, apphash mismatch, panics, signing
+// errors) — it is not a log shipper; use Loki for full retention.
+type LogConfig struct {
+	Enabled    bool      `yaml:"enabled"`
+	Source     string    `yaml:"source"`      // docker | file (default docker)
+	DockerHost string    `yaml:"docker_host"` // unix:///var/run/docker.sock (default) or tcp://proxy:2375
+	Container  string    `yaml:"container"`   // docker container name/id
+	File       string    `yaml:"file"`        // path for source: file
+	Tail       int       `yaml:"tail"`        // docker: lines to scan back on first connect (default 100)
+	Rules      []LogRule `yaml:"rules"`       // extra rules on top of the built-in pack
+}
+
+// LogRule is one match pattern → alert mapping.
+type LogRule struct {
+	Name        string `yaml:"name"`             // used in the alert key log-<name>:<endpoint>
+	Pattern     string `yaml:"pattern"`          // regular expression
+	Severity    string `yaml:"severity"`         // default critical
+	Count       int    `yaml:"count"`            // matches needed to fire; default 1
+	WindowMin   int    `yaml:"window_minutes"`   // within this many minutes; default 5
+	CooldownMin int    `yaml:"cooldown_minutes"` // minimum gap between repeat alerts; default 30
 }
 
 // ValidatorTargets flattens the single-validator shorthand and the Validators
@@ -344,6 +368,36 @@ func Validate(c *Config) (fatal bool, problems []string) {
 		}
 		if len(v.Nodes) == 0 && !v.PublicFallback {
 			problems = append(problems, fmt.Sprintf("warn: %s has no nodes and public_fallback is off; it cannot be monitored", name))
+		}
+		for _, n := range v.Nodes {
+			if n.Logs == nil || !n.Logs.Enabled {
+				continue
+			}
+			switch n.Logs.Source {
+			case "", "docker":
+				if n.Logs.Container == "" {
+					problems = append(problems, fmt.Sprintf("error: %s node %s: logs enabled but no container set", name, n.URL))
+					fatal = true
+				}
+			case "file":
+				if n.Logs.File == "" {
+					problems = append(problems, fmt.Sprintf("error: %s node %s: logs source=file but no file path set", name, n.URL))
+					fatal = true
+				}
+			default:
+				problems = append(problems, fmt.Sprintf("error: %s node %s: invalid logs source %q (docker|file)", name, n.URL, n.Logs.Source))
+				fatal = true
+			}
+			for _, r := range n.Logs.Rules {
+				if r.Name == "" || r.Pattern == "" {
+					problems = append(problems, fmt.Sprintf("warn: %s node %s: log rule needs name + pattern", name, n.URL))
+					continue
+				}
+				if _, err := regexp.Compile(r.Pattern); err != nil {
+					problems = append(problems, fmt.Sprintf("error: %s node %s: bad log rule pattern %q: %v", name, n.URL, r.Name, err))
+					fatal = true
+				}
+			}
 		}
 		a := v.Alerts
 		if !a.ConsecutiveEnabled && !a.PercentageEnabled && !a.AlertIfInactive && !a.AlertIfNoServers && !a.StalledEnabled && !a.LagEnabled {

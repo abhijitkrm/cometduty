@@ -67,3 +67,17 @@ chains:
         metrics_url: http://${NODE_HOST}:26660
         home: ${NODE_HOME}             # read-only mount of the node home
         alert_if_down: yes
+        logs:
+          enabled: yes
+          source: docker               # docker | file
+          docker_host: tcp://cometduty-docker-proxy:2375   # read-only socket proxy
+          container: ${NODE_HOST}
+          tail: 100                    # lines scanned back on first connect
+          # extra rules on top of the built-in pack:
+          # rules:
+          #   - name: my-pattern
+          #     pattern: "something went sideways"
+          #     severity: warning
+          #     count: 5
+          #     window_minutes: 2
+          #     cooldown_minutes: 30

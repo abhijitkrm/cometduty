@@ -161,6 +161,15 @@ chains:
         # metrics_url: http://localhost:26660  # node's own prometheus endpoint — enables cpu/mem stats
         # home: /node-home               # read-only mount of the node's home dir —
                                         # enables disk-free + priv_validator_state checks
+        # logs:                          # tail this node's logs for known-bad patterns
+        #   enabled: yes                 #   (CONSENSUS FAILURE, apphash mismatch, panic, …)
+        #   source: docker               #   docker | file
+        #   docker_host: unix:///var/run/docker.sock   # or tcp://docker-proxy:2375 (read-only proxy)
+        #   container: primium-validator0
+        #   # file: /var/log/node.log    # for source: file
+        #   # tail: 100                  # docker: lines scanned back on first connect
+        #   # rules:                     # extra patterns over the built-in pack
+        #   #   - {name: my-rule, pattern: "err substring", severity: warning, count: 5, window_minutes: 2, cooldown_minutes: 30}
       - url: https://rpc2.example.com:443
         alert_if_down: no
         # insecure_tls: yes      # self-signed certs

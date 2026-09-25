@@ -37,6 +37,8 @@ type MetricsSink interface {
 	NodeInfo(name, chainID, endpoint, validator, moniker, version, network string)
 	EvmGasPrice(name, chainID, endpoint, validator string, wei float64)
 	NodeLocal(name, chainID, endpoint, validator string, diskFreeBytes, signerHeight float64)
+	LogLine(name, chainID, endpoint, validator, level string)
+	LogMatch(name, chainID, endpoint, validator, rule, severity string)
 }
 
 // nodeState tracks a configured endpoint's health.
@@ -223,6 +225,7 @@ func (c *Chain) chainCfg() *config.ChainConfig {
 func (c *Chain) Run(ctx context.Context) {
 	go c.healthLoop(ctx)
 	go c.watchLoop(ctx)
+	go c.logsLoop(ctx) // pattern alerts on container/file logs
 
 	for {
 		if ctx.Err() != nil {
