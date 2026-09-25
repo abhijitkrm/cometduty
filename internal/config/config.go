@@ -115,6 +115,16 @@ type HealthcheckConfig struct {
 type ChainConfig struct {
 	ChainID string `yaml:"chain_id"`
 
+	// Role decides which alert classes this instance owns when several
+	// cometduty processes watch the same chain:
+	//   standalone (default/empty): every alert class — single instance
+	//   sidecar: node-local alerts (down, catching-up, lag, internals, evm,
+	//     signer, disk) plus its validators' signing alerts. Suppresses
+	//     chain-wide alerts (stalled, no-servers, set-watch).
+	//   chain: chain-wide alerts only (stalled, no-servers, set-watch) —
+	//     the central instance alongside per-validator sidecars.
+	Role string `yaml:"role"`
+
 	// Single-validator shorthand (v2 compat). If Validators is also set, both
 	// are used.
 	ValoperAddress  string `yaml:"valoper_address"`
@@ -209,6 +219,10 @@ type AlertConfig struct {
 	CatchingUpGraceMin int    `yaml:"catching_up_grace_minutes"` // must be syncing this long before alerting; 0 = immediate
 	CatchingUpStuckMin int    `yaml:"catching_up_stuck_minutes"` // syncing with no height progress > N min → critical; 0 = off
 
+	// Local checks — need the node's home dir mounted read-only (node home:).
+	DiskFreeBytesAlert int64 `yaml:"disk_free_bytes_alert"` // home filesystem free < N bytes → warning; 0 = off
+	SignerStallMin     int   `yaml:"signer_stall_minutes"`  // priv_validator_state height unmoved > N min while chain advances → warning; 0 = off
+
 	// Per-chain/per-validator destination overrides. The Enabled flag can
 	// selectively disable a destination for this scope, and the credential
 	// fields fall back to the global values when blank.
@@ -228,6 +242,7 @@ type NodeConfig struct {
 	MetricsURL  string            `yaml:"metrics_url"` // optional: node's own prometheus endpoint for host stats
 	Validator   string            `yaml:"validator"`   // moniker of the validator this node serves — joins node metrics to validator metrics
 	EvmRPC      string            `yaml:"evm_rpc"`     // optional: this node's own EVM JSON-RPC (per-validator execution checks)
+	HomeDir     string            `yaml:"home"`        // optional: read-only mount of the node's home dir — enables local checks (signer state, disk)
 	AlertIfDown bool              `yaml:"alert_if_down"`
 	InsecureTLS bool              `yaml:"insecure_tls"` // allow self-signed certs
 	Headers     map[string]string `yaml:"headers"`      // extra HTTP headers, e.g. Authorization
@@ -249,6 +264,13 @@ func (cc *ChainConfig) ValidatorTargets() []ValidatorConfig {
 	out = append(out, cc.Validators...)
 	return out
 }
+
+// IsSidecar reports whether this chain runs in sidecar role.
+func (cc *ChainConfig) IsSidecar() bool { return cc.Role == "sidecar" }
+
+// IsChainOnly reports whether this chain runs in chain role (chain-wide
+// alerts only — the central instance next to per-validator sidecars).
+func (cc *ChainConfig) IsChainOnly() bool { return cc.Role == "chain" }
 
 // CatchUp reports whether syncing-node alerts are enabled. Nil pointer means
 // on — catching-up has been unconditional since v0.1.0, so absence must not
@@ -302,6 +324,12 @@ func Validate(c *Config) (fatal bool, problems []string) {
 		v := c.Chains[name]
 		if v.ChainID == "" {
 			problems = append(problems, fmt.Sprintf("error: %s has no chain_id", name))
+			fatal = true
+		}
+		switch v.Role {
+		case "", "standalone", "sidecar", "chain":
+		default:
+			problems = append(problems, fmt.Sprintf("error: %s has invalid role %q (standalone|sidecar|chain)", name, v.Role))
 			fatal = true
 		}
 		targets := v.ValidatorTargets()

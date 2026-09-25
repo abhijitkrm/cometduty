@@ -1,0 +1,69 @@
+# cometduty sidecar config — one instance per validator.
+#
+# Every ${VAR} below is expanded by cometduty at load time (ExpandEnv), so a
+# single file serves all sidecars; each container just sets different env.
+#
+# The sidecar reaches its node over the shared docker network by container
+# DNS name (NODE_HOST), and reads the node's home dir read-only (NODE_HOME)
+# for disk-free and priv_validator_state checks.
+
+prometheus_enabled: yes
+prometheus_listen_port: 28686
+node_down_alert_minutes: 3
+node_down_alert_severity: critical
+flap_suppression_minutes: 15
+
+# Destinations — enable one and set credentials via env in compose.
+webhook:
+  enabled: no
+  # url: https://hooks.example.com/cometduty
+
+chains:
+  "${CHAIN_NAME}":
+    chain_id: ${CHAIN_ID}
+    role: sidecar          # node-local + validator signing alerts only —
+                           # chain-wide alerts are the central instance's job
+    valoper_address: ${VALOPER}
+    label: ${VALIDATOR}
+
+    alerts:
+      consecutive_enabled: yes
+      consecutive_missed: 15
+      consecutive_priority: critical
+      percentage_enabled: yes
+      percentage_missed: 10
+      percentage_priority: warning
+      alert_if_inactive: yes       # jailed / tombstoned / unbonded
+      alert_if_no_servers: no      # chain-wide — leave to role: chain
+
+      lag_enabled: yes             # node behind head
+      lag_blocks: 100
+
+      evm_down_enabled: yes        # this node's own evm_rpc unreachable
+      evm_lag_enabled: yes         # execution behind consensus
+      evm_lag_blocks: 30
+
+      catching_up_severity: warning
+      catching_up_grace_minutes: 2      # brief restarts sync quietly
+      catching_up_stuck_minutes: 15     # syncing but height frozen → critical
+
+      disk_free_bytes_alert: 5368709120 # 5 GiB on the home filesystem
+      signer_stall_minutes: 5           # priv_validator_state unmoved while chain advances
+
+      # internals — metrics always on; nonzero here also alerts
+      mempool_txs_alert: 0
+      consensus_round_alert: 0
+      evm_txpool_queued_alert: 0
+      cpu_pct_alert: 0
+      mem_bytes_alert: 0
+
+      webhook: {enabled: no}       # enable + url to receive this sidecar's alerts
+
+    nodes:
+      - url: tcp://${NODE_HOST}:26657
+        name: ${VALIDATOR}
+        validator: ${VALIDATOR}        # joins node metrics to the validator
+        evm_rpc: http://${NODE_HOST}:8545
+        metrics_url: http://${NODE_HOST}:26660
+        home: ${NODE_HOME}             # read-only mount of the node home
+        alert_if_down: yes

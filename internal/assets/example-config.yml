@@ -69,6 +69,13 @@ healthcheck:
 chains:
   "Osmosis":
     chain_id: osmosis-1
+    # role decides which alert classes this instance owns when several
+    # cometduty processes watch one chain:
+    #   standalone (default) — every alert class
+    #   sidecar    — node-local + validator signing alerts; suppresses
+    #                chain-wide alerts (stalled, no-servers, set-watch)
+    #   chain      — chain-wide alerts only (the central instance)
+    # role: standalone
     # single validator shorthand:
     valoper_address: osmovaloper1xxxx...
     # OR a direct consensus address (ICS consumer chains etc.):
@@ -127,6 +134,11 @@ chains:
       catching_up_grace_minutes: 0      # must be syncing this long first (0 = immediate)
       catching_up_stuck_minutes: 15     # syncing + height unmoved > N min → critical (0 = off)
 
+      # Local checks — need the node's home dir mounted read-only (node home:):
+      disk_free_bytes_alert: 0          # home filesystem free < N bytes → warning
+      signer_stall_minutes: 0           # priv_validator_state unmoved > N min while
+                                        # the chain advances → warning (bad key, wedged signer)
+
       # per-chain destination overrides (enabled + credentials):
       pagerduty: {enabled: yes}
       discord:   {enabled: yes}
@@ -147,6 +159,8 @@ chains:
         # evm_rpc: http://localhost:8545   # this node's own EVM endpoint — per-validator
                                           # execution checks (txpool/lag labeled by validator)
         # metrics_url: http://localhost:26660  # node's own prometheus endpoint — enables cpu/mem stats
+        # home: /node-home               # read-only mount of the node's home dir —
+                                        # enables disk-free + priv_validator_state checks
       - url: https://rpc2.example.com:443
         alert_if_down: no
         # insecure_tls: yes      # self-signed certs

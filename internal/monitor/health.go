@@ -41,6 +41,7 @@ func (c *Chain) probeAllNodes(ctx context.Context) {
 	lagEnabled := c.cfg.Alerts.LagEnabled
 	mempoolAlert := int64(c.cfg.Alerts.MempoolTxsAlert)
 	roundAlert := int64(c.cfg.Alerts.ConsensusRoundAlert)
+	nodeScope := !c.cfg.IsChainOnly() // chain role: node-local pages belong to sidecars
 	evmProbes := append([]*evmProbe(nil), c.evmProbes...)
 	c.mu.Unlock()
 
@@ -53,6 +54,9 @@ func (c *Chain) probeAllNodes(ctx context.Context) {
 		go func(i int, n *nodeState) {
 			defer wg.Done()
 			results[i] = c.probeNode(ctx, n, chainID)
+			// local checks work even when the node is down — a full disk or
+			// missing signer state is exactly what you want to know then.
+			c.probeLocal(n)
 		}(i, n)
 	}
 	// EVM probes run alongside the cometbft probes — per-validator endpoints
@@ -114,7 +118,7 @@ func (c *Chain) probeAllNodes(ctx context.Context) {
 		}
 
 		// lag alerting
-		if lagEnabled && lagBlocks > 0 && !n.down && lag > lagBlocks && !n.lagged {
+		if nodeScope && lagEnabled && lagBlocks > 0 && !n.down && lag > lagBlocks && !n.lagged {
 			n.lagged = true
 			c.alert(chainID, nil, "node-lag:"+n.cfg.URL, false, "warning",
 				fmt.Sprintf("RPC node %s is %d blocks behind head (%d) on %s", nodeLabel(n), lag, bestHeight, chainID))
@@ -133,7 +137,7 @@ func (c *Chain) probeAllNodes(ctx context.Context) {
 		}
 
 		// mempool backlog alerting (0 = metric only)
-		if mempoolAlert > 0 && !n.down && n.mempoolTxs > int64(mempoolAlert) && !n.mempoolAlerted {
+		if nodeScope && mempoolAlert > 0 && !n.down && n.mempoolTxs > int64(mempoolAlert) && !n.mempoolAlerted {
 			n.mempoolAlerted = true
 			c.alert(chainID, nil, "mempool-txs:"+n.cfg.URL, false, "warning",
 				fmt.Sprintf("RPC node %s has %d unconfirmed txs (%d bytes) on %s — CheckTx/execution may be wedged", nodeLabel(n), n.mempoolTxs, n.mempoolBytes, chainID))
@@ -145,7 +149,7 @@ func (c *Chain) probeAllNodes(ctx context.Context) {
 
 		// consensus round alerting (0 = metric only) — sustained elevation is
 		// leader churn even while the node answers RPC
-		if roundAlert > 0 && !n.down && n.round > int64(roundAlert) && !n.roundAlerted {
+		if nodeScope && roundAlert > 0 && !n.down && n.round > int64(roundAlert) && !n.roundAlerted {
 			n.roundAlerted = true
 			c.alert(chainID, nil, "consensus-round:"+n.cfg.URL, false, "warning",
 				fmt.Sprintf("RPC node %s is at consensus round %d (> %d) on %s — proposals timing out", nodeLabel(n), n.round, roundAlert, chainID))
@@ -339,6 +343,7 @@ func (c *Chain) probeNode(ctx context.Context, n *nodeState, chainID string) *no
 // CPU% is derived from the counter delta between probes — it can exceed 100
 // on multi-core nodes.
 func (c *Chain) probeSysstats(ctx context.Context, n *nodeState) {
+	nodeScope := !c.cfg.IsChainOnly()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(n.cfg.MetricsURL, "/")+"/metrics", nil)
 	if err != nil {
 		return
@@ -384,7 +389,7 @@ func (c *Chain) probeSysstats(ctx context.Context, n *nodeState) {
 	}
 
 	a := c.cfg.Alerts
-	if a.CpuPctAlert > 0 {
+	if nodeScope && a.CpuPctAlert > 0 {
 		key := "cpu-high:" + n.cfg.URL
 		if cpuPct > float64(a.CpuPctAlert) && !n.cpuAlerted {
 			n.cpuAlerted = true
@@ -396,7 +401,7 @@ func (c *Chain) probeSysstats(ctx context.Context, n *nodeState) {
 				fmt.Sprintf("node %s CPU back to %.0f%% on %s", nodeLabel(n), cpuPct, chainID))
 		}
 	}
-	if a.MemBytesAlert > 0 {
+	if nodeScope && a.MemBytesAlert > 0 {
 		key := "mem-high:" + n.cfg.URL
 		if mem > float64(a.MemBytesAlert) && !n.memAlerted {
 			n.memAlerted = true
@@ -453,9 +458,14 @@ func (c *Chain) watchLoop(ctx context.Context) {
 		c.mu.Lock()
 		cfg := c.cfg
 		a := cfg.Alerts
+		// role gating: sidecars own node-local + validator alerts; the chain
+		// role owns chain-wide alerts; standalone owns both. Metrics export
+		// regardless — only pages are scoped.
+		nodeScope := !cfg.IsChainOnly()
+		chainScope := !cfg.IsSidecar()
 
 		// --- stalled chain detection (with correct resolve) ---
-		if a.StalledEnabled {
+		if a.StalledEnabled && chainScope {
 			stallFor := time.Since(c.lastBlockTime)
 			stalled := !c.lastBlockTime.IsZero() && stallFor > time.Duration(a.StalledMinutes)*time.Minute
 			switch {
@@ -473,7 +483,7 @@ func (c *Chain) watchLoop(ctx context.Context) {
 		}
 
 		// --- no usable RPC endpoints ---
-		if a.AlertIfNoServers {
+		if a.AlertIfNoServers && chainScope {
 			switch {
 			case c.noNodes && !c.noNodesAlarm && time.Since(c.noNodesSince) > time.Duration(root.NodeDownMin)*time.Minute:
 				c.noNodesAlarm = true
@@ -488,6 +498,9 @@ func (c *Chain) watchLoop(ctx context.Context) {
 
 		// --- node down / catching-up alarms ---
 		for _, n := range c.nodes {
+			if !nodeScope {
+				break // chain role: node-local alerts belong to the sidecars
+			}
 			syncKey := "catching-up:" + n.cfg.URL
 			stuckKey := "catching-up-stuck:" + n.cfg.URL
 			if n.syncing {
@@ -554,6 +567,9 @@ func (c *Chain) watchLoop(ctx context.Context) {
 		// --- EVM execution-layer alarms: chain-level evm_rpc plus every
 		// per-node evm_rpc (each keyed by its own url, so no collisions) ---
 		for _, p := range c.evmProbes {
+			if !nodeScope {
+				break
+			}
 			evmLag := c.lastHeight - p.height
 			if evmLag < 0 {
 				evmLag = 0
@@ -588,6 +604,9 @@ func (c *Chain) watchLoop(ctx context.Context) {
 
 		// --- per-validator alarms ---
 		for _, tg := range c.targets {
+			if !nodeScope {
+				break // chain role: validator alerts belong to the sidecars
+			}
 			if tg.info == nil {
 				continue
 			}

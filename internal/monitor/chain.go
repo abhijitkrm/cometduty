@@ -36,6 +36,7 @@ type MetricsSink interface {
 	VotingPower(name, chainID, validator, moniker string, power, proposerPriority int64)
 	NodeInfo(name, chainID, endpoint, validator, moniker, version, network string)
 	EvmGasPrice(name, chainID, endpoint, validator string, wei float64)
+	NodeLocal(name, chainID, endpoint, validator string, diskFreeBytes, signerHeight float64)
 }
 
 // nodeState tracks a configured endpoint's health.
@@ -72,6 +73,16 @@ type nodeState struct {
 	sysPrevAt  time.Time
 	cpuAlerted bool // cpu-high alert currently open
 	memAlerted bool // mem-high alert currently open
+
+	// local checks — populated when cfg.HomeDir is mounted read-only
+	diskFree      float64   // free bytes on the home filesystem
+	signerHeight  int64     // priv_validator_state.json height (last signed HRS)
+	signerMax     int64     // highest signer height ever seen — regression detector
+	signerAt      time.Time // last time the signer height advanced
+	diskAlarm     bool      // disk-low alert currently open
+	signerAlarm   bool      // signer-stalled alert currently open
+	regressAlarm  bool      // signer-regressed alert currently open
+	signFileAlarm bool      // signer-state unreadable alert currently open
 }
 
 // Target is one validator being watched on a chain.

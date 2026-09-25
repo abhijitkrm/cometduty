@@ -1,0 +1,37 @@
+# cometduty chain-role config — the ONE central instance next to the sidecars.
+# Owns chain-wide alerts only: stalled chain, no-working-RPC, validator-set
+# changes. Node-local and validator-signing pages come from the sidecars.
+
+prometheus_enabled: yes
+prometheus_listen_port: 28686
+node_down_alert_minutes: 3
+flap_suppression_minutes: 15
+
+webhook:
+  enabled: no
+  # url: https://hooks.example.com/cometduty
+
+chains:
+  "${CHAIN_NAME}":
+    chain_id: ${CHAIN_ID}
+    role: chain
+
+    alerts:
+      stalled_enabled: yes
+      stalled_minutes: 2
+      alert_if_no_servers: yes
+      set_watch_enabled: yes          # validator-new / validator-gone / validator-jailed
+      # everything below stays off here — the sidecars page for those
+      webhook: {enabled: no}
+
+    # all validator RPC endpoints as data sources — no alert_if_down, the
+    # sidecars own node-down paging.
+    nodes:
+      - url: tcp://${NODE0_HOST}:26657
+        name: validator-0
+      - url: tcp://${NODE1_HOST}:26657
+        name: validator-1
+      - url: tcp://${NODE2_HOST}:26657
+        name: validator-2
+      - url: tcp://${NODE3_HOST}:26657
+        name: validator-3

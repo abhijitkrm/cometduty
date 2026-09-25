@@ -1,0 +1,144 @@
+# cometduty sidecar overlay for a primium-1-style localnet.
+#
+# Layout: each validator container (primium-validatorN) keeps its own compose
+# project — this file is a separate project that attaches to the shared
+# `primium-local` network. Sidecars reach their node by container DNS name
+# and mount the node's home dir read-only from the host.
+#
+#   ┌─────────────────────────┐    ┌─────────────────────────┐
+#   │ primium-validator0      │    │ cometduty-validator0    │
+#   │ 26657 8545 26660        │◄───│ role: sidecar           │──► :28700/metrics
+#   └─────────────────────────┘    └─────────────────────────┘
+#             ▲   same for validators 1..3 (ports 28701-28703)
+#             │    ┌─────────────────────────┐
+#             └─── │ cometduty-chain         │──► :28704/metrics
+#                  │ role: chain (central)   │
+#                  └─────────────────────────┘
+#
+# Required env (see .env.example):
+#   VAL{N}_HOME  host path of validator N's home dir (PRIMIUM_HOST_HOME)
+#   VAL{N}_OPER  validator N's operator address (primiumvaloper1...)
+#
+#   docker compose -f compose.primium.yml --env-file .env up -d
+
+x-sidecar: &sidecar
+  image: ghcr.io/abhijitkrm/cometduty:latest
+  restart: unless-stopped
+  user: "65534:65534"
+  read_only: true
+  networks: [primium-local]
+
+services:
+  cometduty-validator0:
+    <<: *sidecar
+    container_name: cometduty-validator0
+    environment:
+      CHAIN_NAME: primium
+      CHAIN_ID: primium-1
+      NODE_HOST: primium-validator0
+      VALIDATOR: validator-01
+      VALOPER: ${VAL0_OPER:?}
+      NODE_HOME: /node-home
+    volumes:
+      - ./sidecar.yml:/config/config.yml:ro
+      - ${VAL0_HOME:?}:/node-home:ro
+      - cd-sidecar-0:/data
+    ports: ["28700:28686"]
+
+  cometduty-validator1:
+    <<: *sidecar
+    container_name: cometduty-validator1
+    environment:
+      CHAIN_NAME: primium
+      CHAIN_ID: primium-1
+      NODE_HOST: primium-validator1
+      VALIDATOR: validator-02
+      VALOPER: ${VAL1_OPER:?}
+      NODE_HOME: /node-home
+    volumes:
+      - ./sidecar.yml:/config/config.yml:ro
+      - ${VAL1_HOME:?}:/node-home:ro
+      - cd-sidecar-1:/data
+    ports: ["28701:28686"]
+
+  cometduty-validator2:
+    <<: *sidecar
+    container_name: cometduty-validator2
+    environment:
+      CHAIN_NAME: primium
+      CHAIN_ID: primium-1
+      NODE_HOST: primium-validator2
+      VALIDATOR: validator-03
+      VALOPER: ${VAL2_OPER:?}
+      NODE_HOME: /node-home
+    volumes:
+      - ./sidecar.yml:/config/config.yml:ro
+      - ${VAL2_HOME:?}:/node-home:ro
+      - cd-sidecar-2:/data
+    ports: ["28702:28686"]
+
+  cometduty-validator3:
+    <<: *sidecar
+    container_name: cometduty-validator3
+    environment:
+      CHAIN_NAME: primium
+      CHAIN_ID: primium-1
+      NODE_HOST: primium-validator3
+      VALIDATOR: validator-04
+      VALOPER: ${VAL3_OPER:?}
+      NODE_HOME: /node-home
+    volumes:
+      - ./sidecar.yml:/config/config.yml:ro
+      - ${VAL3_HOME:?}:/node-home:ro
+      - cd-sidecar-3:/data
+    ports: ["28703:28686"]
+
+  # The one central instance — chain-wide alerts only.
+  cometduty-chain:
+    <<: *sidecar
+    container_name: cometduty-chain
+    environment:
+      CHAIN_NAME: primium
+      CHAIN_ID: primium-1
+      NODE0_HOST: primium-validator0
+      NODE1_HOST: primium-validator1
+      NODE2_HOST: primium-validator2
+      NODE3_HOST: primium-validator3
+    volumes:
+      - ./chain.yml:/config/config.yml:ro
+      - cd-chain-state:/data
+    ports: ["28704:28686"]
+
+  # Read-only docker API for the sidecars' log tailer (Phase 2) — exposes
+  # ONLY container listing + log streaming; no inspect/exec/write.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    container_name: cometduty-docker-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: "1"
+      LOGS: "1"
+      POST: "0"
+      NETWORKS: "0"
+      IMAGES: "0"
+      EXEC: "0"
+      INFO: "0"
+      VERSION: "0"
+      EVENTS: "0"
+      ALLOW_START: "0"
+      ALLOW_STOP: "0"
+      ALLOW_RESTARTS: "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [primium-local]
+
+networks:
+  primium-local:
+    external: true
+
+volumes:
+  cd-sidecar-0:
+  cd-sidecar-1:
+  cd-sidecar-2:
+  cd-sidecar-3:
+  cd-chain-state:

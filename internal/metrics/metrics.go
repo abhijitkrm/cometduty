@@ -74,6 +74,9 @@ type Exporter struct {
 	valPriority    *prometheus.GaugeVec
 	nodeInfo       *prometheus.GaugeVec
 	evmGasPrice    *prometheus.GaugeVec
+
+	nodeDiskFree     *prometheus.GaugeVec
+	nodeSignerHeight *prometheus.GaugeVec
 }
 
 // New registers all metrics.
@@ -255,6 +258,14 @@ func New(version string) *Exporter {
 			Name: "cometduty_evm_gas_price",
 			Help: "eth_gasPrice in wei — fee pressure on the execution layer",
 		}, evmLabels),
+		nodeDiskFree: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_node_disk_free_bytes",
+			Help: "free bytes on the filesystem holding the node home dir (node home: mount)",
+		}, epValLabels),
+		nodeSignerHeight: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_node_signer_height",
+			Help: "height recorded in priv_validator_state.json — the last block this key signed",
+		}, epValLabels),
 	}
 	promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "cometduty_info",
@@ -468,4 +479,12 @@ func (e *Exporter) NodeInfo(name, chainID, endpoint, validator, moniker, version
 
 func (e *Exporter) EvmGasPrice(name, chainID, endpoint, validator string, wei float64) {
 	e.evmGasPrice.With(prometheus.Labels{"name": name, "chain_id": chainID, "endpoint": endpoint, "validator": validator}).Set(wei)
+}
+
+// NodeLocal exports checks that need the node's home dir mounted read-only:
+// free disk on that filesystem and the priv_validator_state signing height.
+func (e *Exporter) NodeLocal(name, chainID, endpoint, validator string, diskFreeBytes, signerHeight float64) {
+	l := prometheus.Labels{"name": name, "chain_id": chainID, "endpoint": endpoint, "validator": validator}
+	e.nodeDiskFree.With(l).Set(diskFreeBytes)
+	e.nodeSignerHeight.With(l).Set(signerHeight)
 }
