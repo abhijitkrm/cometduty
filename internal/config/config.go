@@ -202,6 +202,13 @@ type AlertConfig struct {
 	CpuPctAlert   int   `yaml:"cpu_pct_alert"`   // cpu seconds/sec > N percent
 	MemBytesAlert int64 `yaml:"mem_bytes_alert"` // resident memory > N bytes
 
+	// Catching-up: the node is reachable but still block-syncing. nil means
+	// enabled (v0.1.0 behaviour); set catching_up_enabled: no to silence it.
+	CatchingUpEnabled  *bool  `yaml:"catching_up_enabled"`
+	CatchingUpSeverity string `yaml:"catching_up_severity"`      // default warning
+	CatchingUpGraceMin int    `yaml:"catching_up_grace_minutes"` // must be syncing this long before alerting; 0 = immediate
+	CatchingUpStuckMin int    `yaml:"catching_up_stuck_minutes"` // syncing with no height progress > N min → critical; 0 = off
+
 	// Per-chain/per-validator destination overrides. The Enabled flag can
 	// selectively disable a destination for this scope, and the credential
 	// fields fall back to the global values when blank.
@@ -219,6 +226,8 @@ type NodeConfig struct {
 	URL         string            `yaml:"url"`
 	Name        string            `yaml:"name"`        // friendly label shown instead of the raw URL
 	MetricsURL  string            `yaml:"metrics_url"` // optional: node's own prometheus endpoint for host stats
+	Validator   string            `yaml:"validator"`   // moniker of the validator this node serves — joins node metrics to validator metrics
+	EvmRPC      string            `yaml:"evm_rpc"`     // optional: this node's own EVM JSON-RPC (per-validator execution checks)
 	AlertIfDown bool              `yaml:"alert_if_down"`
 	InsecureTLS bool              `yaml:"insecure_tls"` // allow self-signed certs
 	Headers     map[string]string `yaml:"headers"`      // extra HTTP headers, e.g. Authorization
@@ -239,6 +248,21 @@ func (cc *ChainConfig) ValidatorTargets() []ValidatorConfig {
 	}
 	out = append(out, cc.Validators...)
 	return out
+}
+
+// CatchUp reports whether syncing-node alerts are enabled. Nil pointer means
+// on — catching-up has been unconditional since v0.1.0, so absence must not
+// silently disable it.
+func (a AlertConfig) CatchUp() bool {
+	return a.CatchingUpEnabled == nil || *a.CatchingUpEnabled
+}
+
+// CatchUpSeverity returns the configured severity, defaulting to warning.
+func (a AlertConfig) CatchUpSeverity() string {
+	if a.CatchingUpSeverity == "" {
+		return "warning"
+	}
+	return a.CatchingUpSeverity
 }
 
 var pdOAuthRex = regexp.MustCompile(`[+_-]`)

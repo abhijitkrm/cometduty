@@ -120,6 +120,13 @@ chains:
       cpu_pct_alert: 0            # node cpu >N% (per-core; >100 possible)
       mem_bytes_alert: 0          # node resident memory >N bytes
 
+      # Catching-up (block sync in progress) — on by default, auto-resolves.
+      # A syncing node suppresses node-down so one problem doesn't page twice.
+      # catching_up_enabled: yes        # set no to silence
+      catching_up_severity: warning     # severity for the catching-up alert
+      catching_up_grace_minutes: 0      # must be syncing this long first (0 = immediate)
+      catching_up_stuck_minutes: 15     # syncing + height unmoved > N min → critical (0 = off)
+
       # per-chain destination overrides (enabled + credentials):
       pagerduty: {enabled: yes}
       discord:   {enabled: yes}
@@ -135,6 +142,10 @@ chains:
       - url: tcp://localhost:26657
         name: local sentry      # shown instead of the raw URL
         alert_if_down: yes
+        # validator: validator-01   # moniker of the validator this node serves — adds a
+                                    # `validator` label to node metrics (per-validator views)
+        # evm_rpc: http://localhost:8545   # this node's own EVM endpoint — per-validator
+                                          # execution checks (txpool/lag labeled by validator)
         # metrics_url: http://localhost:26660  # node's own prometheus endpoint — enables cpu/mem stats
       - url: https://rpc2.example.com:443
         alert_if_down: no

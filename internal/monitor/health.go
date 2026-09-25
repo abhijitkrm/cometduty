@@ -41,7 +41,7 @@ func (c *Chain) probeAllNodes(ctx context.Context) {
 	lagEnabled := c.cfg.Alerts.LagEnabled
 	mempoolAlert := int64(c.cfg.Alerts.MempoolTxsAlert)
 	roundAlert := int64(c.cfg.Alerts.ConsensusRoundAlert)
-	evmURL := c.cfg.EvmRPC
+	evmProbes := append([]*evmProbe(nil), c.evmProbes...)
 	c.mu.Unlock()
 
 	// best known height = max observed across nodes (for lag detection)
@@ -55,11 +55,16 @@ func (c *Chain) probeAllNodes(ctx context.Context) {
 			results[i] = c.probeNode(ctx, n, chainID)
 		}(i, n)
 	}
-	wg.Wait()
-
-	if evmURL != "" {
-		c.probeEVM(ctx, evmURL)
+	// EVM probes run alongside the cometbft probes — per-validator endpoints
+	// live on the same host as their node, no reason to serialize them.
+	for _, p := range evmProbes {
+		wg.Add(1)
+		go func(p *evmProbe) {
+			defer wg.Done()
+			c.probeEVM(ctx, p)
+		}(p)
 	}
+	wg.Wait()
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -89,10 +94,23 @@ func (c *Chain) probeAllNodes(ctx context.Context) {
 			if n.down && !n.downSince.IsZero() {
 				downSec = time.Since(n.downSince).Seconds()
 			}
-			c.met.NodeHealth(c.name, chainID, nodeLabel(n), n.cfg.URL, downSec, float64(lag), float64(n.peers))
+			c.met.NodeHealth(c.name, chainID, n.cfg.URL, nodeLabel(n), n.cfg.Validator, downSec, float64(lag), float64(n.peers))
 			if n.version != "" {
-				c.met.NodeInfo(c.name, chainID, n.cfg.URL, n.moniker, n.version, n.network)
+				c.met.NodeInfo(c.name, chainID, n.cfg.URL, n.cfg.Validator, n.moniker, n.version, n.network)
 			}
+			// sync progress: catching_up flag, distance behind head, and the
+			// average catch-up rate (blocks-behind / rate ≈ seconds to synced)
+			var cu, behind, rate float64
+			if n.syncing {
+				cu = 1
+				if bestHeight > n.height {
+					behind = float64(bestHeight - n.height)
+				}
+				if d := time.Since(n.syncSince).Seconds(); d > 0 && n.height > n.syncStartHeight {
+					rate = float64(n.height-n.syncStartHeight) / d
+				}
+			}
+			c.met.NodeSync(c.name, chainID, n.cfg.URL, n.cfg.Validator, cu, behind, rate)
 		}
 
 		// lag alerting
@@ -111,7 +129,7 @@ func (c *Chain) probeAllNodes(ctx context.Context) {
 			if !n.down {
 				mempoolTxs, mempoolBytes, round = float64(n.mempoolTxs), float64(n.mempoolBytes), float64(n.round)
 			}
-			c.met.NodeInternals(c.name, chainID, n.cfg.URL, nodeLabel(n), mempoolTxs, mempoolBytes, round)
+			c.met.NodeInternals(c.name, chainID, n.cfg.URL, nodeLabel(n), n.cfg.Validator, mempoolTxs, mempoolBytes, round)
 		}
 
 		// mempool backlog alerting (0 = metric only)
@@ -146,27 +164,28 @@ func (c *Chain) probeAllNodes(ctx context.Context) {
 	}
 }
 
-// probeEVM checks the configured EVM JSON-RPC endpoint: latest executed height
-// and sync state. The gap between consensus height and EVM height is the
-// execution-lag signal — consensus producing blocks the EVM never runs is a
-// distinct outage (chain looks alive, transactions don't execute).
-func (c *Chain) probeEVM(ctx context.Context, url string) {
-	cl := evm.New(url, 8*time.Second)
+// probeEVM checks one EVM JSON-RPC endpoint: latest executed height and sync
+// state. The gap between consensus height and EVM height is the execution-lag
+// signal — consensus producing blocks the EVM never runs is a distinct outage
+// (chain looks alive, transactions don't execute). Runs for the chain-level
+// evm_rpc and for every node with its own evm_rpc.
+func (c *Chain) probeEVM(ctx context.Context, p *evmProbe) {
+	cl := evm.New(p.url, 8*time.Second)
 	ectx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	height, err := cl.BlockNumber(ectx)
 	cancel()
 	c.mu.Lock()
 	if err != nil {
-		if !c.evmDown {
-			c.evmDown, c.evmDownSince = true, time.Now()
+		if !p.down {
+			p.down, p.downSince = true, time.Now()
 		}
-		c.evmLastMsg = "down: " + err.Error()
+		p.lastMsg = "down: " + err.Error()
 		c.mu.Unlock()
 		return
 	}
-	c.evmDown, c.evmSyncing, c.evmLastMsg = false, false, ""
-	c.evmHeight = height
-	c.evmDownSince = time.Time{}
+	p.down, p.syncing, p.lastMsg = false, false, ""
+	p.height = height
+	p.downSince = time.Time{}
 	c.mu.Unlock()
 
 	sctx, scancel := context.WithTimeout(ctx, 5*time.Second)
@@ -174,18 +193,18 @@ func (c *Chain) probeEVM(ctx context.Context, url string) {
 	scancel()
 	c.mu.Lock()
 	if serr == nil {
-		c.evmSyncing = syncing
+		p.syncing = syncing
 	}
-	lag := c.lastHeight - c.evmHeight
+	lag := c.lastHeight - p.height
 	if lag < 0 {
 		lag = 0 // evm can briefly lead while the next consensus block finalizes
 	}
 	var downSec float64
-	if c.evmDown {
-		downSec = time.Since(c.evmDownSince).Seconds()
+	if p.down {
+		downSec = time.Since(p.downSince).Seconds()
 	}
 	if c.met != nil {
-		c.met.EvmHealth(c.name, c.cfg.ChainID, url, c.evmHeight, lag, downSec, c.evmSyncing)
+		c.met.EvmHealth(c.name, c.cfg.ChainID, p.url, p.validator, p.height, lag, downSec, p.syncing)
 	}
 	txpoolAlert := int64(c.cfg.Alerts.EvmTxpoolQueuedAlert)
 	c.mu.Unlock()
@@ -203,26 +222,26 @@ func (c *Chain) probeEVM(ctx context.Context, url string) {
 
 	c.mu.Lock()
 	if terr == nil {
-		c.evmPending, c.evmQueued = pending, queued
+		p.pending, p.queued = pending, queued
 	}
 	if gerr == nil {
-		c.evmGasRatio = ratio
+		p.gasRatio = ratio
 	}
 	if c.met != nil {
-		c.met.EvmInternals(c.name, c.cfg.ChainID, url, c.evmPending, c.evmQueued, c.evmGasRatio)
+		c.met.EvmInternals(c.name, c.cfg.ChainID, p.url, p.validator, p.pending, p.queued, p.gasRatio)
 		if gperr == nil {
 			gf, _ := new(big.Float).SetInt(gp).Float64()
-			c.met.EvmGasPrice(c.name, c.cfg.ChainID, url, gf)
+			c.met.EvmGasPrice(c.name, c.cfg.ChainID, p.url, p.validator, gf)
 		}
 	}
-	if txpoolAlert > 0 && c.evmQueued > txpoolAlert && !c.evmTxpoolAlarm {
-		c.evmTxpoolAlarm = true
-		c.alert(c.cfg.ChainID, nil, "evm-txpool:"+url, false, "warning",
-			fmt.Sprintf("EVM txpool on %s has %d queued txs (> %d) — execution wedge or nonce gap", url, c.evmQueued, txpoolAlert))
-	} else if c.evmTxpoolAlarm && c.evmQueued <= txpoolAlert {
-		c.evmTxpoolAlarm = false
-		c.alert(c.cfg.ChainID, nil, "evm-txpool:"+url, true, "info",
-			fmt.Sprintf("EVM txpool on %s drained (queued %d)", url, c.evmQueued))
+	if txpoolAlert > 0 && p.queued > txpoolAlert && !p.txpoolAlarm {
+		p.txpoolAlarm = true
+		c.alert(c.cfg.ChainID, nil, "evm-txpool:"+p.url, false, "warning",
+			fmt.Sprintf("EVM txpool on %s has %d queued txs (> %d) — execution wedge or nonce gap", p.label(), p.queued, txpoolAlert))
+	} else if p.txpoolAlarm && p.queued <= txpoolAlert {
+		p.txpoolAlarm = false
+		c.alert(c.cfg.ChainID, nil, "evm-txpool:"+p.url, true, "info",
+			fmt.Sprintf("EVM txpool on %s drained (queued %d)", p.label(), p.queued))
 	}
 	c.mu.Unlock()
 }
@@ -255,12 +274,24 @@ func (c *Chain) probeNode(ctx context.Context, n *nodeState, chainID string) *no
 	n.height = int64(st.SyncInfo.LatestBlockHeight)
 	n.moniker, n.version, n.network = st.NodeInfo.Moniker, st.NodeInfo.Version, st.NodeInfo.Network
 	if st.SyncInfo.CatchingUp {
+		now := time.Now()
+		if !n.syncing {
+			// sync episode begins — baseline for rate/ETA and grace windows
+			n.syncSince = now
+			n.syncStartHeight = n.height
+			n.syncLastHeight = n.height
+			n.syncLastChange = now
+		} else if n.height != n.syncLastHeight {
+			n.syncLastHeight = n.height
+			n.syncLastChange = now
+		}
 		n.down, n.syncing, n.lastMsg = true, true, "catching up"
 		c.mu.Unlock()
 		return n
 	}
 	wasDown := n.down
 	n.down, n.syncing = false, false
+	n.syncSince, n.syncLastChange = time.Time{}, time.Time{}
 	n.lastMsg = ""
 	n.downSince = time.Time{}
 	c.mu.Unlock()
@@ -349,7 +380,7 @@ func (c *Chain) probeSysstats(ctx context.Context, n *nodeState) {
 	c.mu.Unlock()
 
 	if c.met != nil {
-		c.met.NodeSysstats(name, chainID, n.cfg.URL, cpuPct, mem)
+		c.met.NodeSysstats(name, chainID, n.cfg.URL, n.cfg.Validator, cpuPct, mem)
 	}
 
 	a := c.cfg.Alerts
@@ -388,6 +419,9 @@ func (c *Chain) markDown(n *nodeState, msg string) {
 		n.down = true
 		n.downSince = time.Now()
 	}
+	// unreachable means the sync state is unknown — hand paging to node-down
+	// and let the catching-up alert resolve rather than linger stale.
+	n.syncing = false
 	n.lastMsg = msg
 }
 
@@ -404,6 +438,7 @@ func nodeLabel(n *nodeState) string {
 func (c *Chain) watchLoop(ctx context.Context) {
 	nodeAlerted := map[string]bool{}
 	syncAlerted := make(map[string]bool)
+	stuckAlerted := make(map[string]bool)
 	t := time.NewTicker(2 * time.Second)
 	defer t.Stop()
 	for {
@@ -451,66 +486,103 @@ func (c *Chain) watchLoop(ctx context.Context) {
 			}
 		}
 
-		// --- node down alarms ---
+		// --- node down / catching-up alarms ---
 		for _, n := range c.nodes {
-			// catching-up: node is syncing — informative, distinct from down
 			syncKey := "catching-up:" + n.cfg.URL
-			if n.syncing && !syncAlerted[syncKey] {
-				syncAlerted[syncKey] = true
-				c.alert(cfg.ChainID, nil, syncKey, false, "warning",
-					fmt.Sprintf("RPC node %s is catching up on %s (height %d)", nodeLabel(n), cfg.ChainID, n.height))
-			} else if !n.syncing && (syncAlerted[syncKey] || c.eng.HasOpen(syncKey)) {
-				syncAlerted[syncKey] = false
-				c.alert(cfg.ChainID, nil, syncKey, true, "info",
-					fmt.Sprintf("RPC node %s finished syncing on %s", nodeLabel(n), cfg.ChainID))
+			stuckKey := "catching-up-stuck:" + n.cfg.URL
+			if n.syncing {
+				// catching-up: informative, after an optional grace period so
+				// brief sync blips don't page.
+				if a.CatchUp() && !syncAlerted[syncKey] && !c.eng.HasOpen(syncKey) &&
+					time.Since(n.syncSince) >= time.Duration(a.CatchingUpGraceMin)*time.Minute {
+					syncAlerted[syncKey] = true
+					c.alert(cfg.ChainID, nil, syncKey, false, a.CatchUpSeverity(),
+						fmt.Sprintf("RPC node %s is catching up on %s (height %d, syncing for %s)",
+							nodeLabel(n), cfg.ChainID, n.height, time.Since(n.syncSince).Round(time.Second)))
+				}
+				// stuck: syncing but height not advancing — usually peers or
+				// a missing/failed state-sync snapshot. Escalates to critical.
+				stuckMin := time.Duration(a.CatchingUpStuckMin) * time.Minute
+				switch {
+				case a.CatchingUpStuckMin > 0 && !n.syncLastChange.IsZero() &&
+					time.Since(n.syncLastChange) > stuckMin &&
+					!stuckAlerted[stuckKey] && !c.eng.HasOpen(stuckKey):
+					stuckAlerted[stuckKey] = true
+					c.alert(cfg.ChainID, nil, stuckKey, false, "critical",
+						fmt.Sprintf("RPC node %s is syncing on %s but height has been stuck at %d for > %d minutes — check peers/state-sync",
+							nodeLabel(n), cfg.ChainID, n.height, a.CatchingUpStuckMin))
+				case a.CatchingUpStuckMin > 0 && !n.syncLastChange.IsZero() &&
+					time.Since(n.syncLastChange) <= stuckMin &&
+					(stuckAlerted[stuckKey] || c.eng.HasOpen(stuckKey)):
+					stuckAlerted[stuckKey] = false
+					c.alert(cfg.ChainID, nil, stuckKey, true, "info",
+						fmt.Sprintf("RPC node %s sync resumed on %s (height %d)", nodeLabel(n), cfg.ChainID, n.height))
+				}
+			} else {
+				if syncAlerted[syncKey] || c.eng.HasOpen(syncKey) {
+					syncAlerted[syncKey] = false
+					c.alert(cfg.ChainID, nil, syncKey, true, "info",
+						fmt.Sprintf("RPC node %s finished syncing on %s", nodeLabel(n), cfg.ChainID))
+				}
+				if stuckAlerted[stuckKey] || c.eng.HasOpen(stuckKey) {
+					stuckAlerted[stuckKey] = false
+					c.alert(cfg.ChainID, nil, stuckKey, true, "info",
+						fmt.Sprintf("RPC node %s finished syncing on %s", nodeLabel(n), cfg.ChainID))
+				}
 			}
 
+			// node-down is suppressed while the node is syncing — a syncing
+			// node is reachable; paging "down" alongside catching-up would be
+			// a double alert for one problem. An open node-down resolves once
+			// the node answers RPC again, even mid-sync.
 			key := "node-down:" + n.cfg.URL
-			if n.cfg.AlertIfDown && n.down && !n.downSince.IsZero() &&
-				time.Since(n.downSince) > time.Duration(root.NodeDownMin)*time.Minute {
-				if !nodeAlerted[key] {
+			switch {
+			case n.cfg.AlertIfDown && n.down && !n.syncing && !n.downSince.IsZero() &&
+				time.Since(n.downSince) > time.Duration(root.NodeDownMin)*time.Minute:
+				if !nodeAlerted[key] && !c.eng.HasOpen(key) {
 					nodeAlerted[key] = true
 					c.alert(cfg.ChainID, nil, key, false, root.NodeDownSeverity,
 						fmt.Sprintf("RPC node %s down for > %d minutes on %s: %s", nodeLabel(n), root.NodeDownMin, cfg.ChainID, n.lastMsg))
 				}
-			} else if !n.down && (nodeAlerted[key] || c.eng.HasOpen(key)) {
+			case (!n.down || n.syncing) && (nodeAlerted[key] || c.eng.HasOpen(key)):
 				nodeAlerted[key] = false
 				c.alert(cfg.ChainID, nil, key, true, "info",
-					fmt.Sprintf("RPC node %s recovered on %s", nodeLabel(n), cfg.ChainID))
+					fmt.Sprintf("RPC node %s reachable again on %s", nodeLabel(n), cfg.ChainID))
 			}
 		}
 
-		// --- EVM execution-layer alarms (only when evm_rpc configured) ---
-		if cfg.EvmRPC != "" {
-			evmLag := c.lastHeight - c.evmHeight
+		// --- EVM execution-layer alarms: chain-level evm_rpc plus every
+		// per-node evm_rpc (each keyed by its own url, so no collisions) ---
+		for _, p := range c.evmProbes {
+			evmLag := c.lastHeight - p.height
 			if evmLag < 0 {
 				evmLag = 0
 			}
 			// evm endpoint down
-			key := "evm-down:" + cfg.EvmRPC
+			key := "evm-down:" + p.url
 			switch {
-			case a.EvmDownEnabled && c.evmDown && !c.evmDownSince.IsZero() &&
-				time.Since(c.evmDownSince) > time.Duration(root.NodeDownMin)*time.Minute && !c.evmDownAlarm:
-				c.evmDownAlarm = true
+			case a.EvmDownEnabled && p.down && !p.downSince.IsZero() &&
+				time.Since(p.downSince) > time.Duration(root.NodeDownMin)*time.Minute && !p.downAlarm:
+				p.downAlarm = true
 				c.alert(cfg.ChainID, nil, key, false, "warning",
-					fmt.Sprintf("EVM RPC %s down for > %d minutes on %s: %s", cfg.EvmRPC, root.NodeDownMin, cfg.ChainID, c.evmLastMsg))
-			case !c.evmDown && (c.evmDownAlarm || c.eng.HasOpen(key)):
-				c.evmDownAlarm = false
+					fmt.Sprintf("EVM RPC %s down for > %d minutes on %s: %s", p.label(), root.NodeDownMin, cfg.ChainID, p.lastMsg))
+			case !p.down && (p.downAlarm || c.eng.HasOpen(key)):
+				p.downAlarm = false
 				c.alert(cfg.ChainID, nil, key, true, "info",
-					fmt.Sprintf("EVM RPC %s recovered on %s", cfg.EvmRPC, cfg.ChainID))
+					fmt.Sprintf("EVM RPC %s recovered on %s", p.label(), cfg.ChainID))
 			}
 			// execution lag — only meaningful while the endpoint is up
-			key = "evm-lag:" + cfg.EvmRPC
+			key = "evm-lag:" + p.url
 			switch {
-			case a.EvmLagEnabled && !c.evmDown && !c.evmSyncing && c.evmHeight > 0 &&
-				a.EvmLagBlocks > 0 && evmLag > int64(a.EvmLagBlocks) && !c.evmLagAlarm:
-				c.evmLagAlarm = true
+			case a.EvmLagEnabled && !p.down && !p.syncing && p.height > 0 &&
+				a.EvmLagBlocks > 0 && evmLag > int64(a.EvmLagBlocks) && !p.lagAlarm:
+				p.lagAlarm = true
 				c.alert(cfg.ChainID, nil, key, false, "warning",
-					fmt.Sprintf("EVM execution is %d blocks behind consensus on %s (evm %d, comet %d)", evmLag, cfg.ChainID, c.evmHeight, c.lastHeight))
-			case (!a.EvmLagEnabled || evmLag <= int64(a.EvmLagBlocks)) && (c.evmLagAlarm || c.eng.HasOpen(key)):
-				c.evmLagAlarm = false
+					fmt.Sprintf("EVM execution on %s is %d blocks behind consensus on %s (evm %d, comet %d)", p.label(), evmLag, cfg.ChainID, p.height, c.lastHeight))
+			case (!a.EvmLagEnabled || evmLag <= int64(a.EvmLagBlocks)) && (p.lagAlarm || c.eng.HasOpen(key)):
+				p.lagAlarm = false
 				c.alert(cfg.ChainID, nil, key, true, "info",
-					fmt.Sprintf("EVM execution caught up on %s (lag %d)", cfg.ChainID, evmLag))
+					fmt.Sprintf("EVM execution on %s caught up on %s (lag %d)", p.label(), cfg.ChainID, evmLag))
 			}
 		}
 

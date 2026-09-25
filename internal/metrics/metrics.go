@@ -18,7 +18,9 @@ import (
 )
 
 var chainLabels = []string{"name", "chain_id", "validator", "moniker"}
-var endpointLabels = []string{"name", "chain_id", "endpoint", "label"}
+var endpointLabels = []string{"name", "chain_id", "endpoint", "label", "validator"}
+var epValLabels = []string{"name", "chain_id", "endpoint", "validator"}
+var evmLabels = []string{"name", "chain_id", "endpoint", "validator"}
 var infoLabels = []string{"version", "go_version"}
 
 // Exporter implements monitor.MetricsSink.
@@ -43,6 +45,10 @@ type Exporter struct {
 	endpointDown   *prometheus.GaugeVec
 	endpointLag    *prometheus.GaugeVec
 	endpointPeers  *prometheus.GaugeVec
+
+	endpointCatchUp  *prometheus.GaugeVec
+	endpointSyncLag  *prometheus.GaugeVec
+	endpointSyncRate *prometheus.GaugeVec
 
 	evmHeight     *prometheus.GaugeVec
 	evmLag        *prometheus.GaugeVec
@@ -149,22 +155,34 @@ func New(version string) *Exporter {
 			Name: "cometduty_endpoint_peers",
 			Help: "peer count reported by the endpoint",
 		}, endpointLabels),
+		endpointCatchUp: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_endpoint_catching_up",
+			Help: "1 while the endpoint reports catching_up — block sync in progress",
+		}, endpointLabels),
+		endpointSyncLag: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_endpoint_sync_blocks_behind",
+			Help: "blocks behind the best-seen height while catching up — distance to synced",
+		}, endpointLabels),
+		endpointSyncRate: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cometduty_endpoint_sync_rate_blocks_per_sec",
+			Help: "average catch-up rate since this sync began — divide blocks-behind by it for an ETA",
+		}, endpointLabels),
 		evmHeight: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cometduty_evm_block_height",
 			Help: "latest executed EVM block reported by the configured evm_rpc endpoint",
-		}, []string{"name", "chain_id"}),
+		}, evmLabels),
 		evmLag: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cometduty_evm_lag_blocks",
 			Help: "consensus height minus EVM-executed height — execution lag; nonzero means transactions aren't executing",
-		}, []string{"name", "chain_id"}),
+		}, evmLabels),
 		evmDown: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cometduty_evm_endpoint_down_seconds",
 			Help: "how long the configured evm_rpc endpoint has been unreachable",
-		}, []string{"name", "chain_id", "endpoint"}),
+		}, evmLabels),
 		evmSyncing: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cometduty_evm_syncing",
 			Help: "1 while eth_syncing reports an in-progress sync",
-		}, []string{"name", "chain_id"}),
+		}, evmLabels),
 		notifyResults: promauto.NewCounterVec(prometheus.CounterOpts{
 			Name: "cometduty_notify_total",
 			Help: "notifier delivery attempts by destination and result — alert on result=error",
@@ -172,35 +190,35 @@ func New(version string) *Exporter {
 		mempoolTxs: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cometduty_mempool_txs",
 			Help: "unconfirmed txs in the node's consensus mempool (num_unconfirmed_txs)",
-		}, []string{"name", "chain_id", "endpoint"}),
+		}, endpointLabels),
 		mempoolBytes: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cometduty_mempool_txs_bytes",
 			Help: "total bytes of unconfirmed txs in the node's consensus mempool",
-		}, []string{"name", "chain_id", "endpoint"}),
+		}, endpointLabels),
 		consensusRound: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cometduty_consensus_round",
 			Help: "current consensus round — sustained elevation = leader churn",
-		}, []string{"name", "chain_id", "endpoint"}),
+		}, endpointLabels),
 		evmTxPending: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cometduty_evm_txpool_pending",
 			Help: "executable transactions waiting in the EVM txpool (txpool_status.pending)",
-		}, []string{"name", "chain_id"}),
+		}, evmLabels),
 		evmTxQueued: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cometduty_evm_txpool_queued",
 			Help: "gapped-nonce transactions queued in the EVM txpool (txpool_status.queued)",
-		}, []string{"name", "chain_id"}),
+		}, evmLabels),
 		evmGasRatio: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cometduty_evm_gas_used_ratio",
 			Help: "gasUsed/gasLimit of the latest EVM block — sustained ~1.0 is saturation",
-		}, []string{"name", "chain_id"}),
+		}, evmLabels),
 		nodeCPUPct: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cometduty_node_cpu_percent",
 			Help: "node process CPU usage percent, from its own metrics endpoint (metrics_url)",
-		}, []string{"name", "chain_id", "endpoint"}),
+		}, epValLabels),
 		nodeMemBytes: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cometduty_node_memory_bytes",
 			Help: "node process resident memory in bytes, from its own metrics endpoint (metrics_url)",
-		}, []string{"name", "chain_id", "endpoint"}),
+		}, epValLabels),
 		valJailed: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cometduty_validator_jailed",
 			Help: "1 while the validator is jailed (staking module state)",
@@ -232,11 +250,11 @@ func New(version string) *Exporter {
 		nodeInfo: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cometduty_node_info",
 			Help: "node identity from /status — always 1, labels carry moniker/version/network",
-		}, []string{"name", "chain_id", "endpoint", "moniker", "version", "network"}),
+		}, []string{"name", "chain_id", "endpoint", "validator", "moniker", "version", "network"}),
 		evmGasPrice: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cometduty_evm_gas_price",
 			Help: "eth_gasPrice in wei — fee pressure on the execution layer",
-		}, []string{"name", "chain_id", "endpoint"}),
+		}, evmLabels),
 	}
 	promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "cometduty_info",
@@ -304,11 +322,20 @@ func (e *Exporter) Window(name, chainID, validator, moniker string, missed, wind
 }
 
 // NodeHealth implements monitor.MetricsSink.
-func (e *Exporter) NodeHealth(name, chainID, endpoint, label string, downSeconds, lagBlocks, peers float64) {
-	l := prometheus.Labels{"name": name, "chain_id": chainID, "endpoint": endpoint, "label": label}
+func (e *Exporter) NodeHealth(name, chainID, endpoint, label, validator string, downSeconds, lagBlocks, peers float64) {
+	l := prometheus.Labels{"name": name, "chain_id": chainID, "endpoint": endpoint, "label": label, "validator": validator}
 	e.endpointDown.With(l).Set(downSeconds)
 	e.endpointLag.With(l).Set(lagBlocks)
 	e.endpointPeers.With(l).Set(peers)
+}
+
+// NodeSync implements monitor.MetricsSink — block-sync progress for a
+// catching-up endpoint. behind/rate combine into a sync ETA in Grafana.
+func (e *Exporter) NodeSync(name, chainID, endpoint, validator string, catchingUp, blocksBehind, rateBps float64) {
+	l := prometheus.Labels{"name": name, "chain_id": chainID, "endpoint": endpoint, "label": "", "validator": validator}
+	e.endpointCatchUp.With(l).Set(catchingUp)
+	e.endpointSyncLag.With(l).Set(blocksBehind)
+	e.endpointSyncRate.With(l).Set(rateBps)
 }
 
 // NodeCount records totals per chain.
@@ -324,11 +351,11 @@ func (e *Exporter) ActiveAlerts(name, chainID string, n int) {
 }
 
 // EvmHealth implements monitor.MetricsSink — execution-layer telemetry.
-func (e *Exporter) EvmHealth(name, chainID, endpoint string, height, lag int64, downSeconds float64, syncing bool) {
-	l := prometheus.Labels{"name": name, "chain_id": chainID}
+func (e *Exporter) EvmHealth(name, chainID, endpoint, validator string, height, lag int64, downSeconds float64, syncing bool) {
+	l := prometheus.Labels{"name": name, "chain_id": chainID, "endpoint": endpoint, "validator": validator}
 	e.evmHeight.With(l).Set(float64(height))
 	e.evmLag.With(l).Set(float64(lag))
-	e.evmDown.With(prometheus.Labels{"name": name, "chain_id": chainID, "endpoint": endpoint}).Set(downSeconds)
+	e.evmDown.With(l).Set(downSeconds)
 	sync := 0.0
 	if syncing {
 		sync = 1
@@ -338,24 +365,24 @@ func (e *Exporter) EvmHealth(name, chainID, endpoint string, height, lag int64, 
 
 // NodeInternals exports per-node consensus internals: mempool backlog and the
 // live consensus round.
-func (e *Exporter) NodeInternals(name, chainID, endpoint, label string, mempoolTxs, mempoolBytes, consensusRound float64) {
-	l := prometheus.Labels{"name": name, "chain_id": chainID, "endpoint": endpoint}
+func (e *Exporter) NodeInternals(name, chainID, endpoint, label, validator string, mempoolTxs, mempoolBytes, consensusRound float64) {
+	l := prometheus.Labels{"name": name, "chain_id": chainID, "endpoint": endpoint, "label": label, "validator": validator}
 	e.mempoolTxs.With(l).Set(mempoolTxs)
 	e.mempoolBytes.With(l).Set(mempoolBytes)
 	e.consensusRound.With(l).Set(consensusRound)
 }
 
 // EvmInternals exports execution-layer internals: txpool depth and block fullness.
-func (e *Exporter) EvmInternals(name, chainID, endpoint string, txpoolPending, txpoolQueued int64, gasUsedRatio float64) {
-	l := prometheus.Labels{"name": name, "chain_id": chainID}
+func (e *Exporter) EvmInternals(name, chainID, endpoint, validator string, txpoolPending, txpoolQueued int64, gasUsedRatio float64) {
+	l := prometheus.Labels{"name": name, "chain_id": chainID, "endpoint": endpoint, "validator": validator}
 	e.evmTxPending.With(l).Set(float64(txpoolPending))
 	e.evmTxQueued.With(l).Set(float64(txpoolQueued))
 	e.evmGasRatio.With(l).Set(gasUsedRatio)
 }
 
 // NodeSysstats exports host stats scraped off the node's own metrics endpoint.
-func (e *Exporter) NodeSysstats(name, chainID, endpoint string, cpuPct, memBytes float64) {
-	l := prometheus.Labels{"name": name, "chain_id": chainID, "endpoint": endpoint}
+func (e *Exporter) NodeSysstats(name, chainID, endpoint, validator string, cpuPct, memBytes float64) {
+	l := prometheus.Labels{"name": name, "chain_id": chainID, "endpoint": endpoint, "validator": validator}
 	e.nodeCPUPct.With(l).Set(cpuPct)
 	e.nodeMemBytes.With(l).Set(memBytes)
 }
@@ -432,13 +459,13 @@ func (e *Exporter) VotingPower(name, chainID, validator, moniker string, power, 
 	e.valPriority.With(l).Set(float64(proposerPriority))
 }
 
-func (e *Exporter) NodeInfo(name, chainID, endpoint, moniker, version, network string) {
+func (e *Exporter) NodeInfo(name, chainID, endpoint, validator, moniker, version, network string) {
 	e.nodeInfo.With(prometheus.Labels{
-		"name": name, "chain_id": chainID, "endpoint": endpoint,
+		"name": name, "chain_id": chainID, "endpoint": endpoint, "validator": validator,
 		"moniker": moniker, "version": version, "network": network,
 	}).Set(1)
 }
 
-func (e *Exporter) EvmGasPrice(name, chainID, endpoint string, wei float64) {
-	e.evmGasPrice.With(prometheus.Labels{"name": name, "chain_id": chainID, "endpoint": endpoint}).Set(wei)
+func (e *Exporter) EvmGasPrice(name, chainID, endpoint, validator string, wei float64) {
+	e.evmGasPrice.With(prometheus.Labels{"name": name, "chain_id": chainID, "endpoint": endpoint, "validator": validator}).Set(wei)
 }

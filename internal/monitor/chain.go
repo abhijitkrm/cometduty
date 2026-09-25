@@ -23,18 +23,19 @@ type MetricsSink interface {
 	LastBlock(name, chainID string, height int64, sincePrev float64)
 	Tick(name, chainID string, lastBlockTime time.Time)
 	SignatureRatio(name, chainID string, ratio float64)
-	NodeHealth(name, chainID, endpoint, label string, downSeconds, lagBlocks float64, peers float64)
+	NodeHealth(name, chainID, endpoint, label, validator string, downSeconds, lagBlocks float64, peers float64)
+	NodeSync(name, chainID, endpoint, validator string, catchingUp, blocksBehind, rateBps float64)
 	NodeCount(name, chainID string, total, unhealthy int)
 	Window(name, chainID, validator, moniker string, missed, window int64)
 	ActiveAlerts(name, chainID string, n int)
-	EvmHealth(name, chainID, endpoint string, height, lag int64, downSeconds float64, syncing bool)
-	NodeInternals(name, chainID, endpoint, label string, mempoolTxs, mempoolBytes, consensusRound float64)
-	EvmInternals(name, chainID, endpoint string, txpoolPending, txpoolQueued int64, gasUsedRatio float64)
-	NodeSysstats(name, chainID, endpoint string, cpuPct, memBytes float64)
+	EvmHealth(name, chainID, endpoint, validator string, height, lag int64, downSeconds float64, syncing bool)
+	NodeInternals(name, chainID, endpoint, label, validator string, mempoolTxs, mempoolBytes, consensusRound float64)
+	EvmInternals(name, chainID, endpoint, validator string, txpoolPending, txpoolQueued int64, gasUsedRatio float64)
+	NodeSysstats(name, chainID, endpoint, validator string, cpuPct, memBytes float64)
 	ValidatorState(name, chainID, validator, moniker string, jailed, tombstoned, bonded bool, jailedUntil int64, bondedTokens float64)
 	VotingPower(name, chainID, validator, moniker string, power, proposerPriority int64)
-	NodeInfo(name, chainID, endpoint, moniker, version, network string)
-	EvmGasPrice(name, chainID, endpoint string, wei float64)
+	NodeInfo(name, chainID, endpoint, validator, moniker, version, network string)
+	EvmGasPrice(name, chainID, endpoint, validator string, wei float64)
 }
 
 // nodeState tracks a configured endpoint's health.
@@ -46,11 +47,18 @@ type nodeState struct {
 	downSince time.Time
 	height    int64
 	peers     int64
-	moniker   string // from /status node_info
-	version   string // cometbft build version
-	network   string // reported chain id (matches config when healthy)
-	alerted   bool   // down alert currently open
-	lagged    bool   // lag alert currently open
+
+	syncSince       time.Time // when the current sync episode began
+	syncStartHeight int64     // height at sync start — baseline for catch-up rate/ETA
+	syncLastHeight  int64     // last observed height while syncing
+	syncLastChange  time.Time // last time height moved while syncing (stuck detection)
+
+	evm     *evmProbe // per-node EVM endpoint state (set when node evm_rpc is configured)
+	moniker string    // from /status node_info
+	version string    // cometbft build version
+	network string    // reported chain id (matches config when healthy)
+	alerted bool      // down alert currently open
+	lagged  bool      // lag alert currently open
 
 	mempoolTxs     int64
 	mempoolBytes   int64
@@ -79,6 +87,34 @@ type Target struct {
 	inactive    string // remembers "jailed"/"tombstoned" for resolve text
 }
 
+// evmProbe is one EVM JSON-RPC endpoint's health state. The chain-level
+// evm_rpc gets one; every node with its own evm_rpc gets another, linked to
+// its validator for per-validator execution-layer views.
+type evmProbe struct {
+	url       string
+	validator string // linked validator moniker ("" for the chain-level probe)
+
+	down        bool
+	downSince   time.Time
+	downAlarm   bool
+	height      int64
+	syncing     bool
+	lastMsg     string
+	pending     int64
+	queued      int64
+	gasRatio    float64
+	txpoolAlarm bool
+	lagAlarm    bool
+}
+
+// label renders the probe for alert text — prefers the linked validator name.
+func (p *evmProbe) label() string {
+	if p.validator != "" {
+		return p.validator + " (" + p.url + ")"
+	}
+	return p.url
+}
+
 // Chain monitors one chain (and its 1..n validators).
 type Chain struct {
 	name   string
@@ -104,21 +140,13 @@ type Chain struct {
 	slashingOK     bool
 	lastSlashingAt time.Time
 
-	// EVM execution-layer state (only when cfg.EvmRPC is set)
-	evmDown        bool
-	evmDownSince   time.Time
-	evmDownAlarm   bool
-	evmHeight      int64
-	evmSyncing     bool
-	evmLastMsg     string
-	evmPending     int64
-	evmQueued      int64
-	evmGasRatio    float64
-	evmTxpoolAlarm bool // txpool alert currently open
+	// EVM execution-layer probes: the chain-level cfg.EvmRPC plus one per
+	// node with its own evm_rpc. Rebuilt on config reload.
+	evm       *evmProbe   // chain-level probe (nil unless cfg.EvmRPC set)
+	evmProbes []*evmProbe // every probe incl. per-node — watchLoop iterates this
 
 	setSnapshot map[string]setEntry // last full validator-set view (set-watch)
 	setPrimed   bool                // baseline established — start diffing
-	evmLagAlarm bool
 }
 
 // NewChain builds a monitor for one chain. rootFn must return the current
@@ -143,8 +171,18 @@ func (c *Chain) rebuildLocked(cc *config.ChainConfig) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.nodes = make([]*nodeState, 0, len(cc.Nodes))
+	c.evm, c.evmProbes = nil, nil
+	if cc.EvmRPC != "" {
+		c.evm = &evmProbe{url: cc.EvmRPC}
+		c.evmProbes = append(c.evmProbes, c.evm)
+	}
 	for _, n := range cc.Nodes {
-		c.nodes = append(c.nodes, &nodeState{cfg: n})
+		ns := &nodeState{cfg: n}
+		if n.EvmRPC != "" {
+			ns.evm = &evmProbe{url: n.EvmRPC, validator: n.Validator}
+			c.evmProbes = append(c.evmProbes, ns.evm)
+		}
+		c.nodes = append(c.nodes, ns)
 	}
 	c.targets = make([]*Target, 0)
 	c.byAddr = map[string]*Target{}
