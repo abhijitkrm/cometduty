@@ -1618,7 +1618,10 @@
               "type": "string"
             }
           ],
-          "refId": "A"
+          "refId": "A",
+          "url_options": {
+            "method": "GET"
+          }
         }
       ],
       "fieldConfig": {
@@ -1668,7 +1671,10 @@
               "type": "number"
             }
           ],
-          "refId": "A"
+          "refId": "A",
+          "url_options": {
+            "method": "GET"
+          }
         }
       ],
       "fieldConfig": {
@@ -1733,7 +1739,10 @@
               "type": "string"
             }
           ],
-          "refId": "A"
+          "refId": "A",
+          "url_options": {
+            "method": "GET"
+          }
         }
       ],
       "fieldConfig": {
