@@ -165,7 +165,7 @@ chains:
         #   enabled: yes                 #   (CONSENSUS FAILURE, apphash mismatch, panic, …)
         #   source: docker               #   docker | file
         #   docker_host: unix:///var/run/docker.sock   # or tcp://docker-proxy:2375 (read-only proxy)
-        #   container: primium-validator0
+        #   container: evmd-node0
         #   # file: /var/log/node.log    # for source: file
         #   # tail: 100                  # docker: lines scanned back on first connect
         #   # rules:                     # extra patterns over the built-in pack

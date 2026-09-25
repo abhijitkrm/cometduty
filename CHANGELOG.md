@@ -3,7 +3,11 @@
 All notable changes to cometduty are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.2.0] — 2026-09-25
+
+Sidecar deployment mode, catching-up alert suite, per-node log alerting,
+and a Loki + Alloy log pipeline — tested live against a 4-validator
+Cosmos-EVM localnet.
 
 ### Sidecar deployment
 
@@ -18,8 +22,11 @@ All notable changes to cometduty are documented here. The format follows
   (`disk-low`), `priv_validator_state.json` readability (`signer-state`),
   signer stall (`signer-stalled`), signer height regression
   (`signer-regressed` — double-sign tripwire)
-- `deploy/sidecar/` — primium compose overlay (`network_mode:
-  container:primium-validatorN`), sidecar + chain configs, env template
+- `deploy/sidecar/` — example compose overlay for a 4-validator localnet
+  (container-DNS mode), sidecar + chain configs, env template
+- Sidecar/chain templates take **full-URL envs** (`NODE_RPC`/`NODE_EVM`/
+  `NODE_METRICS`) — the same config works attached to container DNS or
+  against host-published ports (native/development runs)
 
 ### Catching-up
 
@@ -44,6 +51,9 @@ All notable changes to cometduty are documented here. The format follows
   `upgrade-halt`, `double-sign-guard`, `signer-error`, `disk-full`,
   `fd-exhaustion`, `peer-churn`, `evm-errors` — extendable in config
 - `cometduty_log_lines_total{level}` / `cometduty_log_matches_total{rule,severity}`
+- ANSI escape sequences stripped before matching — console-colored logs
+  (`\x1b[32mINF\x1b[0m`, colored `key=value` pairs) parse and match
+  correctly; short console levels (`INF`/`ERR`/`DBG`/`WRN`) recognized
 
 ### Logs in Grafana
 
@@ -79,7 +89,8 @@ All notable changes to cometduty are documented here. The format follows
 - Infinity datasource (`yesoreyeram-infinity-datasource`) provisioned in the
   stack + four direct-RPC table panels: peers, validator set, node identity,
   EVM txpool (POST `txpool_status`). Panels ship with `localhost` URLs —
-  edit per deployment
+  edit per deployment. Explicit `url_options.method` on all queries —
+  compatible with Infinity 3.x (Grafana ≤11.5) and 4.x
 
 ## [0.1.0] — 2026-09-19
 

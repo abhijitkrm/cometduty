@@ -60,7 +60,7 @@ lands under `{job="docker-containers", container="<name>"}`.
   page-worthy and counts it (`cometduty_log_matches_total`); Loki keeps full
   retention (7d default in `loki-config.yml`) for "what happened" forensics.
 - Restrict collection to your validators with the commented `keep` rule in
-  `alloy-config.alloy` (e.g. `regex = "/primium-.*"`).
+  `alloy-config.alloy` (e.g. `regex = "/evmd.*"`).
 - Panels: *Log lines by level* + *Rule matches* come from cometduty's own
   metrics; *Container logs* + *Error lines* query the provisioned `loki`
   datasource.
