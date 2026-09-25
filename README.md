@@ -154,13 +154,24 @@ probes.
 | `mempool-txs` | node mempool backlog > `mempool_txs_alert` (0 = metric only) | CheckTx/execution wedge, tx flood |
 | `consensus-round` | node consensus round > `consensus_round_alert` (0 = metric only) | leader churn — proposals timing out |
 | `evm-txpool` | EVM txpool queued > `evm_txpool_queued_alert` (0 = metric only) | nonce gap or execution stall |
-| `catching-up` | configured node is syncing (`catching_up`) | restart after outage, state-sync, partition healing |
+| `catching-up` | configured node is syncing (`catching_up`); configurable severity + grace window | restart after outage, state-sync, partition healing |
+| `catching-up-stuck` | syncing but height unmoved > `catching_up_stuck_minutes` | dead peers, missing state-sync snapshot, corrupted data |
 | `validator-new` | any validator joins the set (`set_watch_enabled`) | new operator onboarded, post-upgrade set rotation |
 | `validator-gone` | any validator leaves the set (`set_watch_enabled`) | unbond, jail eviction, key rotation |
 | `validator-jailed` | any validator jails (`set_watch_enabled`) | downtime/double-sign slash — even unmonitored validators |
 | `stake-change` | monitored validator's bonded stake moves > `stake_change_pct`% | big delegation/undelegation, slash event |
 | `cpu-high` | node CPU > `cpu_pct_alert`% (needs node `metrics_url`) | load spike, runaway process, under-provisioned host |
 | `mem-high` | node RSS > `mem_bytes_alert` (needs node `metrics_url`) | leak, state growth, OOM runway |
+| `disk-low` | home filesystem free < `disk_free_bytes_alert` (needs node `home`) | state growth, logging spam, full disk |
+| `signer-state` | `priv_validator_state.json` unreadable (needs node `home`) | wiped/restored home — restart would sign from height 0 |
+| `signer-stalled` | signer state unmoved > `signer_stall_minutes` while chain advances | wrong key, wedged signer |
+| `signer-regressed` | signer state height moved backwards | state copied/restored — **double-sign risk** if a twin signs |
+| `log-<rule>` | node log line matches a rule (needs node `logs`) | panic, consensus failure, apphash mismatch, upgrade halt… |
+
+A syncing node suppresses `node-down` — one problem, one page. A `role` field
+on the chain splits duties when several cometduty instances watch one network:
+`sidecar` owns node-local + validator alerts, `chain` owns the network-wide
+ones. See `deploy/sidecar/` for the per-validator compose layout.
 
 Alerts carry validator moniker, chain id, and the condition. Every raise is
 paired with a resolve when the condition clears, so PagerDuty/Opsgenie
@@ -186,7 +197,10 @@ bounded retry on failed sends. Every delivery attempt is counted in
 - `cometduty_consecutive_missed_blocks`, `cometduty_missed_blocks_for_window`, `cometduty_window_missed_percent`
 - `cometduty_block_signature_ratio` — share of the whole set that signed the last block (network-wide early warning; <⅔ means trouble)
 - `cometduty_endpoint_lag_blocks`, `cometduty_endpoint_down_seconds`, `cometduty_endpoint_peers` — per-RPC health
-- `cometduty_evm_block_height`, `cometduty_evm_lag_blocks`, `cometduty_evm_endpoint_down_seconds`, `cometduty_evm_syncing` — execution layer (when `evm_rpc` is set)
+- `cometduty_evm_block_height`, `cometduty_evm_lag_blocks`, `cometduty_evm_endpoint_down_seconds`, `cometduty_evm_syncing` — execution layer (chain `evm_rpc`, or per-node for per-validator views)
+
+All per-node and EVM series carry a `validator` label when the node's
+`validator:` field is set — the Grafana dropdown filters the whole board.
 - `cometduty_evm_txpool_pending`, `cometduty_evm_txpool_queued`, `cometduty_evm_gas_used_ratio` — EVM internals via `txpool_status` / `eth_getBlockByNumber`
 - `cometduty_mempool_txs`, `cometduty_mempool_txs_bytes`, `cometduty_consensus_round` — per-node consensus internals via `num_unconfirmed_txs` / `consensus_state`
 - `cometduty_node_cpu_percent`, `cometduty_node_memory_bytes` — host stats scraped off each node's own prometheus endpoint (per-node `metrics_url`)
@@ -194,6 +208,9 @@ bounded retry on failed sends. Every delivery attempt is counted in
 - `cometduty_validator_jailed`, `cometduty_validator_tombstoned`, `cometduty_validator_bonded`, `cometduty_validator_bonded_tokens`, `cometduty_slashing_jailed_until_seconds` — staking/slashing state per validator
 - `cometduty_node_info{moniker,version,network}` — per-endpoint identity (always 1; labels carry the info)
 - `cometduty_evm_gas_price` — `eth_gasPrice` in wei (when `evm_rpc` is set)
+- `cometduty_endpoint_catching_up`, `cometduty_endpoint_sync_blocks_behind`, `cometduty_endpoint_sync_rate_blocks_per_sec` — sync progress per endpoint; behind/rate ≈ seconds to synced
+- `cometduty_node_disk_free_bytes`, `cometduty_node_signer_height` — local checks via the node's read-only `home` mount
+- `cometduty_log_lines_total{level}`, `cometduty_log_matches_total{rule,severity}` — the per-node log watcher
 - `cometduty_notify_total{dest,result}` — notifier delivery attempts; alert on `result="error"`
 - `cometduty_last_block_height`, `cometduty_time_since_last_block`, `cometduty_active_alerts`, `cometduty_total_(un)healthy_endpoints`
 

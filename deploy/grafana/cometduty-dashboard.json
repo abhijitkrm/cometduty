@@ -1799,6 +1799,170 @@
         "showHeader": true,
         "cellHeight": "sm"
       }
+    },
+    {
+      "type": "row",
+      "id": 900,
+      "title": "Logs",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 113
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 901,
+      "type": "timeseries",
+      "title": "Log lines by level (cometduty tailer)",
+      "description": "Lines read by cometduty's per-node log watcher, split by parsed level. Error-rate spikes here usually precede a page.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 114
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (level) (rate(cometduty_log_lines_total[$__rate_interval]))",
+          "legendFormat": "{{validator}} {{level}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 902,
+      "type": "timeseries",
+      "title": "Log rule matches",
+      "description": "Lines matching cometduty's alert rules (consensus failure, apphash, panic, \u2026). Each match here may have paged.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 114
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (rule, validator) (increase(cometduty_log_matches_total[$__rate_interval]))",
+          "legendFormat": "{{validator}} {{rule}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 903,
+      "type": "logs",
+      "title": "Container logs",
+      "description": "All docker containers via Loki \u2014 filter by container/level in the query. Click a line for surrounding context.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 122
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": false,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "expr": "{job=\"docker-containers\"}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 904,
+      "type": "logs",
+      "title": "Error lines",
+      "description": "Container log lines matching error/panic/fail \u2014 the fast triage view when a page arrives.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 134
+      },
+      "options": {
+        "showTime": true,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "expr": "{job=\"docker-containers\"} |~ \"(?i)(panic|fatal|error|fail|consensus failure)\"",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",
@@ -1847,6 +2011,6 @@
   "timezone": "browser",
   "title": "Cometduty Validator Monitoring",
   "uid": "cometduty",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

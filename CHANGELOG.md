@@ -5,6 +5,54 @@ All notable changes to cometduty are documented here. The format follows
 
 ## [Unreleased]
 
+### Sidecar deployment
+
+- **Node↔validator linkage + per-node EVM** — optional `validator:` on each
+  node attaches its moniker to all node/EVM/log/host series; per-node
+  `evm_rpc` gives every validator its own execution-layer probe
+- **`role:` field** — `standalone` (default, unchanged), `sidecar`
+  (node-local + monitored-validator alerts), `chain` (network-wide alerts:
+  stalled, no-servers, set-watch) — multiple instances on one network no
+  longer duplicate pages
+- **Local checks** (`role=sidecar`, node `home:` read-only mount): disk free
+  (`disk-low`), `priv_validator_state.json` readability (`signer-state`),
+  signer stall (`signer-stalled`), signer height regression
+  (`signer-regressed` — double-sign tripwire)
+- `deploy/sidecar/` — primium compose overlay (`network_mode:
+  container:primium-validatorN`), sidecar + chain configs, env template
+
+### Catching-up
+
+- `catching_up_enabled` / `catching_up_severity` / `catching_up_grace_minutes`
+  — configurable instead of an always-on warning
+- **`node-down` suppressed while syncing** — one problem, one page
+- `catching-up-stuck` alert — syncing but height unmoved for
+  `catching_up_stuck_minutes`
+- `cometduty_endpoint_catching_up`, `cometduty_endpoint_sync_blocks_behind`,
+  `cometduty_endpoint_sync_rate_blocks_per_sec` — sync progress + ETA
+
+### Log alerting
+
+- Per-node `logs:` watcher — `docker` source (container logs via the Docker
+  API; point it at a read-only socket proxy) and `file` source (tail a shared
+  volume or host path). CometBFT/EVM log level parsed for both JSON and
+  console formats; docker stream headers demuxed correctly
+- Pattern-rule engine: `match` regex, `count`/`within` thresholds,
+  `cooldown`, per-rule severity; matches auto-resolve after cooldown with the
+  offending line attached (truncated, no secrets)
+- Built-in rule pack: `panic`, `consensus-failure`, `apphash-mismatch`,
+  `upgrade-halt`, `double-sign-guard`, `signer-error`, `disk-full`,
+  `fd-exhaustion`, `peer-churn`, `evm-errors` — extendable in config
+- `cometduty_log_lines_total{level}` / `cometduty_log_matches_total{rule,severity}`
+
+### Logs in Grafana
+
+- Loki + Grafana Alloy join the stack — Alloy tails docker logs over a
+  read-only socket mount into Loki (`{job="docker-containers",
+  container="<name>"}`, optional validator regex filter); 7d retention
+- `loki` datasource provisioned; dashboard gained a Logs row: lines by
+  level, rule matches, per-container log stream, error lines
+
 ### Metrics
 
 - `cometduty_validator_voting_power` / `cometduty_validator_proposer_priority`

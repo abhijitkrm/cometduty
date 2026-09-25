@@ -1,7 +1,7 @@
 # Local observability stack
 
-Prometheus + Grafana pointed at a cometduty instance and each validator's own
-CometBFT metrics.
+Prometheus + Grafana + Loki pointed at a cometduty instance and each
+validator's own CometBFT metrics.
 
 ## Docker (preferred)
 
@@ -9,6 +9,8 @@ CometBFT metrics.
 docker compose -f deploy/grafana/stack/compose.yml up -d
 # Grafana    http://localhost:3000  (admin / cometduty)
 # Prometheus http://localhost:9090
+# Loki       http://localhost:3100
+# Alloy      http://localhost:12345  (component graph / debug UI)
 ```
 
 cometduty runs on the host — `host.docker.internal` bridges it into the
@@ -47,6 +49,21 @@ metrics (peer lists, validator sets, raw RPC state).
   install yesoreyeram-infinity-datasource`, then restart.
 - The shipped panels target `localhost` URLs — on a different deployment
   edit the panel query URLs (container DNS or real hosts).
+
+## Logs (Loki + Alloy)
+
+The bottom "Logs" row is served by **Loki**, fed by **Alloy** tailing docker
+container logs via a read-only socket mount — every container's stdout/stderr
+lands under `{job="docker-containers", container="<name>"}`.
+
+- The split is deliberate: cometduty's `logs:` watcher decides what's
+  page-worthy and counts it (`cometduty_log_matches_total`); Loki keeps full
+  retention (7d default in `loki-config.yml`) for "what happened" forensics.
+- Restrict collection to your validators with the commented `keep` rule in
+  `alloy-config.alloy` (e.g. `regex = "/primium-.*"`).
+- Panels: *Log lines by level* + *Rule matches* come from cometduty's own
+  metrics; *Container logs* + *Error lines* query the provisioned `loki`
+  datasource.
 
 ## Native fallback (no docker)
 

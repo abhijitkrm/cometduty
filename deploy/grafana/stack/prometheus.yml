@@ -9,6 +9,21 @@ scrape_configs:
     static_configs:
       - targets: ["host.docker.internal:28686"]
 
+  # Sidecar deployment (deploy/sidecar/): one cometduty per validator on
+  # :28700-:28703, plus the chain-role instance on :28704.
+  #   - job_name: cometduty-sidecars
+  #     static_configs:
+  #       - targets: ["host.docker.internal:28700"]
+  #         labels: {validator: validator-01}
+  #       - targets: ["host.docker.internal:28701"]
+  #         labels: {validator: validator-02}
+  #       - targets: ["host.docker.internal:28702"]
+  #         labels: {validator: validator-03}
+  #       - targets: ["host.docker.internal:28703"]
+  #         labels: {validator: validator-04}
+  #       - targets: ["host.docker.internal:28704"]
+  #         labels: {role: chain}
+
   - job_name: cometbft
     static_configs:
       - targets: ["host.docker.internal:27660"]
