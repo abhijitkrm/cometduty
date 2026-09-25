@@ -76,21 +76,36 @@ func (c *Chain) watchLogs(ctx context.Context, n *nodeState, src logs.Source, ru
 	}
 }
 
-// levelRe pulls a severity hint out of the line — cometbft text format
-// (`level=error`) and JSON logs (`"level":"error"`) both.
+// levelRe pulls a severity hint out of the line — cometbft JSON logs
+// (`"level":"error"`), text format (`level=error`), and the console
+// short-form (`INF`, `ERR`, `DBG`, `WRN`, `FTL`, `PAN` — matched only in
+// the line's first bytes where the level token sits after the timestamp).
 var levelRe = regexp.MustCompile(`"level":"(trace|debug|info|warn|warning|error|fatal|panic)"|\blevel=(trace|debug|info|warn|warning|error|fatal|panic)\b`)
+
+var consoleLevelRe = regexp.MustCompile(`^\S+\s+(INF|ERR|DBG|WRN|FTL|PAN)\b`)
+var consoleLevel = map[string]string{
+	"DBG": "debug", "INF": "info", "WRN": "warning",
+	"ERR": "error", "FTL": "fatal", "PAN": "panic",
+}
 
 // evalLogLine runs every rule over one line; a firing rule alerts once then
 // auto-resolves after its cooldown (log alerts are notify-once events, not
-// latched conditions).
+// latched conditions). ANSI escapes are stripped first — colored console
+// logs wrap tokens (`module=<ESC>[0mevm`) and break pattern matching.
 func (c *Chain) evalLogLine(n *nodeState, rules []*logs.Rule, line string) {
 	now := time.Now()
 	chainID := c.cfg.ChainID
+	line = ansiRe.ReplaceAllString(line, "")
 	level := ""
 	if m := levelRe.FindStringSubmatch(line); m != nil {
 		level = m[1]
 		if level == "" {
 			level = m[2]
+		}
+	}
+	if level == "" {
+		if m := consoleLevelRe.FindStringSubmatch(line); m != nil {
+			level = consoleLevel[m[1]]
 		}
 	}
 	if c.met != nil {

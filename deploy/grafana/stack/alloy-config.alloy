@@ -20,12 +20,13 @@ discovery.relabel "containers" {
 		source_labels = ["__meta_docker_container_id"]
 		target_label  = "container_id"
 	}
-	// uncomment to tail only the validators:
-	// rule {
-	// 	source_labels = ["__meta_docker_container_name"]
-	// 	regex         = "/primium-.*"
-	// 	action        = "keep"
-	// }
+	// tail only the primium validators + cometduty's own containers —
+	// unrelated workloads on this host stay out of Loki
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = "/(primium-|cometduty-).*"
+		action        = "keep"
+	}
 }
 
 loki.source.docker "containers" {

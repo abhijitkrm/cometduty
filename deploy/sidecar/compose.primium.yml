@@ -22,9 +22,8 @@
 #   docker compose -f compose.primium.yml --env-file .env up -d
 
 x-sidecar: &sidecar
-  image: ghcr.io/abhijitkrm/cometduty:latest
+  image: ${COMETDUTY_IMAGE:-ghcr.io/abhijitkrm/cometduty:latest}
   restart: unless-stopped
-  user: "65534:65534"
   read_only: true
   networks: [primium-local]
 
@@ -35,7 +34,12 @@ services:
     environment:
       CHAIN_NAME: primium
       CHAIN_ID: primium-1
-      NODE_HOST: primium-validator0
+      METRICS_PORT: "28686"
+      NODE_RPC: tcp://primium-validator0:26657
+      NODE_EVM: http://primium-validator0:8545
+      NODE_METRICS: http://primium-validator0:26660
+      NODE_CONTAINER: primium-validator0
+      DOCKER_HOST: tcp://cometduty-docker-proxy:2375
       VALIDATOR: validator-01
       VALOPER: ${VAL0_OPER:?}
       NODE_HOME: /node-home
@@ -51,7 +55,12 @@ services:
     environment:
       CHAIN_NAME: primium
       CHAIN_ID: primium-1
-      NODE_HOST: primium-validator1
+      METRICS_PORT: "28686"
+      NODE_RPC: tcp://primium-validator1:26657
+      NODE_EVM: http://primium-validator1:8545
+      NODE_METRICS: http://primium-validator1:26660
+      NODE_CONTAINER: primium-validator1
+      DOCKER_HOST: tcp://cometduty-docker-proxy:2375
       VALIDATOR: validator-02
       VALOPER: ${VAL1_OPER:?}
       NODE_HOME: /node-home
@@ -67,7 +76,12 @@ services:
     environment:
       CHAIN_NAME: primium
       CHAIN_ID: primium-1
-      NODE_HOST: primium-validator2
+      METRICS_PORT: "28686"
+      NODE_RPC: tcp://primium-validator2:26657
+      NODE_EVM: http://primium-validator2:8545
+      NODE_METRICS: http://primium-validator2:26660
+      NODE_CONTAINER: primium-validator2
+      DOCKER_HOST: tcp://cometduty-docker-proxy:2375
       VALIDATOR: validator-03
       VALOPER: ${VAL2_OPER:?}
       NODE_HOME: /node-home
@@ -83,7 +97,12 @@ services:
     environment:
       CHAIN_NAME: primium
       CHAIN_ID: primium-1
-      NODE_HOST: primium-validator3
+      METRICS_PORT: "28686"
+      NODE_RPC: tcp://primium-validator3:26657
+      NODE_EVM: http://primium-validator3:8545
+      NODE_METRICS: http://primium-validator3:26660
+      NODE_CONTAINER: primium-validator3
+      DOCKER_HOST: tcp://cometduty-docker-proxy:2375
       VALIDATOR: validator-04
       VALOPER: ${VAL3_OPER:?}
       NODE_HOME: /node-home
@@ -100,10 +119,11 @@ services:
     environment:
       CHAIN_NAME: primium
       CHAIN_ID: primium-1
-      NODE0_HOST: primium-validator0
-      NODE1_HOST: primium-validator1
-      NODE2_HOST: primium-validator2
-      NODE3_HOST: primium-validator3
+      METRICS_PORT: "28686"
+      NODE0_RPC: tcp://primium-validator0:26657
+      NODE1_RPC: tcp://primium-validator1:26657
+      NODE2_RPC: tcp://primium-validator2:26657
+      NODE3_RPC: tcp://primium-validator3:26657
     volumes:
       - ./chain.yml:/config/config.yml:ro
       - cd-chain-state:/data

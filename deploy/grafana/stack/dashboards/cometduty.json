@@ -1587,7 +1587,7 @@
         {
           "type": "json",
           "source": "url",
-          "url": "http://localhost:27657/net_info",
+          "url": "http://host.docker.internal:28657/net_info",
           "format": "table",
           "parser": "backend",
           "root_selector": "result.peers",
@@ -1647,7 +1647,7 @@
         {
           "type": "json",
           "source": "url",
-          "url": "http://localhost:27657/validators?per_page=100",
+          "url": "http://host.docker.internal:28657/validators?per_page=100",
           "format": "table",
           "parser": "backend",
           "root_selector": "result.validators",
@@ -1697,7 +1697,7 @@
         {
           "type": "json",
           "source": "url",
-          "url": "http://localhost:27657/status",
+          "url": "http://host.docker.internal:28657/status",
           "format": "table",
           "parser": "backend",
           "root_selector": "result",
@@ -1762,7 +1762,7 @@
         {
           "type": "json",
           "source": "url",
-          "url": "http://localhost:9545",
+          "url": "http://host.docker.internal:10545",
           "format": "table",
           "parser": "backend",
           "root_selector": "result",

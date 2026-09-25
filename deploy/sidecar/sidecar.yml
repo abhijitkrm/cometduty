@@ -1,19 +1,22 @@
 # cometduty sidecar config — one instance per validator.
 #
 # Every ${VAR} below is expanded by cometduty at load time (ExpandEnv), so a
-# single file serves all sidecars; each container just sets different env.
+# single file serves all sidecars; each container/process just sets different
+# env. URLs are full endpoints — point them at container DNS names when the
+# sidecar shares the validator network, or at host:port when running natively.
 #
-# The sidecar reaches its node over the shared docker network by container
-# DNS name (NODE_HOST), and reads the node's home dir read-only (NODE_HOME)
-# for disk-free and priv_validator_state checks.
+# The sidecar reads the node's home dir (NODE_HOME, read-only) for disk-free
+# and priv_validator_state checks, and tails the node's container logs through
+# DOCKER_HOST — use a read-only socket proxy (tecnativa/docker-socket-proxy),
+# NOT the raw socket, on any host you don't fully control.
 
 prometheus_enabled: yes
-prometheus_listen_port: 28686
+prometheus_listen_port: ${METRICS_PORT}
 node_down_alert_minutes: 3
 node_down_alert_severity: critical
 flap_suppression_minutes: 15
 
-# Destinations — enable one and set credentials via env in compose.
+# Destinations — enable one and set credentials via env.
 webhook:
   enabled: no
   # url: https://hooks.example.com/cometduty
@@ -60,19 +63,19 @@ chains:
       webhook: {enabled: no}       # enable + url to receive this sidecar's alerts
 
     nodes:
-      - url: tcp://${NODE_HOST}:26657
+      - url: ${NODE_RPC}                 # e.g. tcp://primium-validator0:26657 | tcp://localhost:28657
         name: ${VALIDATOR}
-        validator: ${VALIDATOR}        # joins node metrics to the validator
-        evm_rpc: http://${NODE_HOST}:8545
-        metrics_url: http://${NODE_HOST}:26660
-        home: ${NODE_HOME}             # read-only mount of the node home
+        validator: ${VALIDATOR}          # joins node metrics to the validator
+        evm_rpc: ${NODE_EVM}             # e.g. http://primium-validator0:8545
+        metrics_url: ${NODE_METRICS}     # node's own prometheus endpoint base (:26660)
+        home: ${NODE_HOME}               # read-only mount / host dir of node home
         alert_if_down: yes
         logs:
           enabled: yes
-          source: docker               # docker | file
-          docker_host: tcp://cometduty-docker-proxy:2375   # read-only socket proxy
-          container: ${NODE_HOST}
-          tail: 100                    # lines scanned back on first connect
+          source: docker                 # docker | file
+          docker_host: ${DOCKER_HOST}    # tcp://proxy:2375 or unix:///var/run/docker.sock
+          container: ${NODE_CONTAINER}   # the validator's container name
+          tail: 100                      # lines scanned back on first connect
           # extra rules on top of the built-in pack:
           # rules:
           #   - name: my-pattern
