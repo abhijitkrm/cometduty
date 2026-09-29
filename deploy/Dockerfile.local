@@ -3,6 +3,10 @@
 # built static binary on alpine for environments where registry pulls stall.
 FROM alpine
 COPY cometduty /cometduty
-USER 65534:65534
+# Same uid as the distroless images (nonroot, 65532) so a /data volume moves
+# between images; the dir is created owned by it so a fresh named volume
+# stays writable.
+RUN install -d -o 65532 -g 65532 /data
+USER 65532:65532
 EXPOSE 28686
 ENTRYPOINT ["/cometduty", "-f", "/config/config.yml", "--state", "/data/state.json", "--alert-log", "/data/alerts.jsonl"]

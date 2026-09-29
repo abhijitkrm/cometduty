@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -32,7 +33,7 @@ func Load(source, chainDir, password string) (*Config, error) {
 			return nil, err
 		}
 	} else {
-		raw, err = os.ReadFile(source) //nolint:gosec -- operator-provided path
+		raw, err = readConfigFile(source)
 		if err != nil {
 			return nil, err
 		}
@@ -59,6 +60,26 @@ func Load(source, chainDir, password string) (*Config, error) {
 		ch.Name = name
 	}
 	return c, nil
+}
+
+// readConfigFile reads a local config file, turning the two common setup
+// mistakes into actionable errors. The directory case is almost always a
+// docker bind mount whose host file didn't exist: docker creates an empty
+// directory in its place.
+func readConfigFile(path string) ([]byte, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("%w (generate one with `cometduty example-config > config.yml`)", err)
+		}
+		return nil, err
+	}
+	if fi.IsDir() {
+		return nil, fmt.Errorf("config %s is a directory, not a file — if running in docker, "+
+			"the host file was missing when the container started and docker created an empty "+
+			"directory in its place; remove it, create the config file, and restart", path)
+	}
+	return os.ReadFile(path) //nolint:gosec -- operator-provided path
 }
 
 func looksEncrypted(b []byte) bool {

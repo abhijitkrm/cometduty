@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 User=cometduty
 Group=cometduty
-ExecStart=/usr/local/bin/cometduty -f /etc/cometduty/config.yml --state /var/lib/cometduty/state.json --chains-dir /etc/cometduty/chains.d
+ExecStart=/usr/local/bin/cometduty -f /etc/cometduty/config.yml --state /var/lib/cometduty/state.json --alert-log /var/lib/cometduty/alerts.jsonl --chains-dir /etc/cometduty/chains.d
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 RestartSec=10
@@ -19,6 +19,10 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
+# systemd creates /var/lib/cometduty owned by User= on start — no manual
+# mkdir/chown needed; the account itself must exist (see docs/INSTALL.md)
+StateDirectory=cometduty
+StateDirectoryMode=0750
 ReadWritePaths=/var/lib/cometduty
 
 [Install]

@@ -1,3 +1,6 @@
+# Create ./config.yml before `docker compose up` — a missing bind-mount source
+# is created as an empty directory, and cometduty will refuse to start:
+#   docker run --rm --entrypoint /cometduty ghcr.io/abhijitkrm/cometduty:latest example-config > config.yml
 services:
   cometduty:
     image: ghcr.io/abhijitkrm/cometduty:latest

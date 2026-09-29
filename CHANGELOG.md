@@ -3,6 +3,65 @@
 All notable changes to cometduty are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- Loading a config path that is a directory now fails with an actionable
+  error instead of a bare `read ...: is a directory` — the usual cause is a
+  docker bind mount whose host file didn't exist. A missing config file now
+  points at `cometduty example-config`.
+- Docker images could not write their state dir: every image ran as a
+  non-root user but `/data` was root-owned (the release image never created
+  it; the source image created it for the wrong uid, 65534, and `COPY --from`
+  dropped the ownership anyway). State saves and the alert log failed with
+  `permission denied`, losing dedup memory on restart. `/data` now ships
+  owned by uid 65532 in all images (the local alpine image moves from 65534
+  to 65532 to match, so a volume works across images). Existing root-owned
+  volumes need a one-time `chown` — see `docs/INSTALL.md`
+- The source-built image now writes the alert log (`--alert-log`) like the
+  release image
+- systemd unit: `StateDirectory=` creates `/var/lib/cometduty` owned by the
+  service user, and the alert log is enabled
+- `cometduty_time_since_last_block_unfinalized` was registered but never
+  set (its `Tick` updater had no caller), leaving the dashboard's *Seconds
+  Since Last Block* panel empty. It's now updated every 2s from the watch
+  loop, so it keeps climbing through a stall or a websocket reconnect
+- Grafana stack: bundled `node-exporter` service (pinned v1.8.2), so the
+  *Host* row has data without installing anything on the host
+- Dashboard *Host Memory Used %* was always empty on Linux (divided by the
+  macOS-only `node_memory_total_bytes`; Linux is `node_memory_MemTotal_bytes`)
+- Dashboard *Host CPU Used %* averaged every host into one line; now one per
+  instance
+- Dashboard *Host Disk Used %* only watched `/`, which misses a separate
+  chain-data disk (and is a read-only image on Docker Desktop); it now plots
+  every real disk per device
+- Grafana stack: pin the Infinity plugin to 3.7.1 — the unpinned install
+  pulled 4.x, which needs Grafana ≥ 11.6.11 and failed to load on the
+  shipped 11.4 (`404 … react/jsx-runtime`)
+- Grafana stack: Prometheus published on host port 9091 instead of 9090,
+  which collides with a Cosmos node's gRPC port on the same host; every
+  host port is now overridable (`GRAFANA_PORT`, `PROMETHEUS_PORT`,
+  `LOKI_PORT`, `ALLOY_PORT`)
+- Grafana stack: `extra_hosts: host-gateway` so `host.docker.internal`
+  resolves on Linux engines, not just Docker Desktop
+- Grafana stack: `prometheus.yml` defaults to a generic single-instance
+  layout (cometduty `:28686`, node `:26660` / `:8100`) that works out of the
+  box; the old defaults (`27660`/`10100` node ports) matched no published
+  setup. Multi-node and sidecar targets are sketched in comments
+
+### Documentation
+
+- `docs/INSTALL.md`: systemd service setup (dedicated user, config
+  permissions) and non-root / volume-ownership notes for docker
+- Grafana stack README: quick start with target selection and a verify
+  step, a table of panels that are empty by design (and what fills them),
+  and troubleshooting for the common failure modes
+
+- README, `docs/INSTALL.md` and `deploy/docker-compose.yml` now say to create
+  `config.yml` before starting the container, and show how to generate and
+  validate it using the image alone; runbook lists the failure signature.
+
 ## [0.2.0] — 2026-09-25
 
 Sidecar deployment mode, catching-up alert suite, per-node log alerting,

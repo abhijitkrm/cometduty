@@ -79,10 +79,16 @@ curl -fsSL https://raw.githubusercontent.com/abhijitkrm/cometduty/main/scripts/i
 # from source (Go 1.26+)
 go install github.com/abhijitkrm/cometduty/cmd/cometduty@latest
 
-# or docker (multi-arch images on ghcr)
+# or docker (multi-arch images on ghcr) — create config.yml first (see below)
 docker run -v $PWD/config.yml:/config/config.yml:ro -v cd-data:/data \
   -p 28686:28686 ghcr.io/abhijitkrm/cometduty:latest
 ```
+
+> **Docker:** `config.yml` must exist on the host *before* the container
+> starts — otherwise docker bind-mounts an empty directory in its place and
+> cometduty exits with `config /config/config.yml is a directory`. Generate one
+> without installing the binary:
+> `docker run --rm --entrypoint /cometduty ghcr.io/abhijitkrm/cometduty:latest example-config > config.yml`
 
 Full guide — binaries, verification, docker, building from source:
 [docs/INSTALL.md](docs/INSTALL.md).

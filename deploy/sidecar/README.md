@@ -53,4 +53,6 @@ cp .env.example .env   # fill VAL{N}_HOME + VAL{N}_OPER
 docker compose -f compose.primium.yml --env-file .env up -d
 ```
 
-Then point Prometheus at `:28700`–`:28704` on the host.
+Then point Prometheus at `:28700`–`:28704` on the host — with the bundled
+stack, swap the `cometduty` job in `deploy/grafana/stack/prometheus.yml` for
+the sidecar targets sketched in its comments.
