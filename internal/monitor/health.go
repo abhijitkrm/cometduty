@@ -452,6 +452,15 @@ func (c *Chain) watchLoop(ctx context.Context) {
 			return
 		case <-t.C:
 		}
+		// Seconds-since-last-block must keep climbing while no block arrives —
+		// including while the websocket is down — so it's driven from here, not
+		// from the block handler.
+		if c.met != nil {
+			c.mu.Lock()
+			chainID, last := c.cfg.ChainID, c.lastBlockTime
+			c.mu.Unlock()
+			c.met.Tick(c.name, chainID, last)
+		}
 		// NB: rootFn() acquires the supervisor lock — call it BEFORE c.mu to
 		// keep lock ordering consistent with Reload (s.mu → chain.mu).
 		root := c.rootFn()

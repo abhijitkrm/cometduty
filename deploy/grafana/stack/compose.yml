@@ -3,16 +3,21 @@
 # dashboard. `docker compose -f deploy/grafana/stack/compose.yml up -d`
 #
 #   Grafana:    http://localhost:3000  (admin / cometduty)
-#   Prometheus: http://localhost:9090
+#   Prometheus: http://localhost:9091  (not 9090 — that's a Cosmos node's gRPC port)
 #   Loki:       http://localhost:3100  (container logs via Alloy)
+#
+# Host ports are overridable: GRAFANA_PORT, PROMETHEUS_PORT, LOKI_PORT, ALLOY_PORT.
 services:
   prometheus:
     image: prom/prometheus:v2.55.1
     ports:
-      - "9090:9090"
+      - "${PROMETHEUS_PORT:-9091}:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prom-data:/prometheus
+    # host.docker.internal is built into Docker Desktop; this makes it resolve
+    # on Linux engines too (no-op on Desktop).
+    extra_hosts: ["host.docker.internal:host-gateway"]
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=15d
@@ -20,17 +25,21 @@ services:
   grafana:
     image: grafana/grafana:11.4.0
     ports:
-      - "3000:3000"
+      - "${GRAFANA_PORT:-3000}:3000"
     environment:
       GF_SECURITY_ADMIN_PASSWORD: cometduty
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
-      # Infinity datasource — direct RPC queries for the table panels
-      GF_INSTALL_PLUGINS: yesoreyeram-infinity-datasource
+      # Infinity datasource — direct RPC queries for the table panels.
+      # Pinned: an unpinned install pulls the latest release, and Infinity 4.x
+      # requires Grafana >= 11.6.11 — on 11.4 its UI fails to load with
+      # "404 Not Found, loading react/jsx-runtime". Bump both together.
+      GF_INSTALL_PLUGINS: "yesoreyeram-infinity-datasource 3.7.1"
     volumes:
       - ./provisioning:/etc/grafana/provisioning:ro
       - ./dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
+    extra_hosts: ["host.docker.internal:host-gateway"]   # Infinity panels query node RPC
     depends_on:
       - prometheus
       - loki
@@ -40,7 +49,7 @@ services:
   loki:
     image: grafana/loki:3.4.2
     ports:
-      - "3100:3100"
+      - "${LOKI_PORT:-3100}:3100"
     volumes:
       - ./loki-config.yml:/etc/loki/local-config.yaml:ro
       - loki-data:/loki
@@ -55,9 +64,24 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "/etc/alloy/config.alloy"]
     ports:
-      - "12345:12345"   # alloy UI (component graph, debug) — drop if unwanted
+      - "${ALLOY_PORT:-12345}:12345"   # alloy UI (component graph, debug) — drop if unwanted
     depends_on:
       - loki
+
+  # Host CPU / memory / disk / load for the dashboard's "Host" row. Reads the
+  # docker host's /proc and root filesystem (read-only) — on Linux that's the
+  # machine itself; on Docker Desktop it's the VM your node containers run in.
+  # Scraped over the compose network, so no host port is published.
+  # Nodes on other machines: run node_exporter there and add them to the
+  # node-exporter job in prometheus.yml.
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    restart: unless-stopped
+    pid: host
+    command:
+      - --path.rootfs=/host
+    volumes:
+      - /:/host:ro
 
 volumes:
   prom-data: {}

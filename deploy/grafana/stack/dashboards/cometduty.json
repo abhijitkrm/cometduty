@@ -1336,7 +1336,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Host Disk Used % (/)",
+      "title": "Host Disk Used %",
       "datasource": {
         "type": "prometheus",
         "uid": "cometduty-prom"
@@ -1349,9 +1349,9 @@
       },
       "targets": [
         {
-          "expr": "100 - (node_filesystem_avail_bytes{mountpoint=\"/\",fstype!~\"devfs|map.*\"} / node_filesystem_size_bytes{mountpoint=\"/\"}) * 100",
+          "expr": "100 - max by (instance, device) (node_filesystem_avail_bytes{job=\"node-exporter\",fstype!~\"tmpfs|devtmpfs|overlay|squashfs|erofs|nsfs|devfs|nullfs|map.*|autofs|fuse.*|virtiofs.*|fakeowner|selfowner\"} / node_filesystem_size_bytes{job=\"node-exporter\",fstype!~\"tmpfs|devtmpfs|overlay|squashfs|erofs|nsfs|devfs|nullfs|map.*|autofs|fuse.*|virtiofs.*|fakeowner|selfowner\"}) * 100",
           "refId": "A",
-          "legendFormat": "{{instance}}"
+          "legendFormat": "{{instance}} {{device}}"
         }
       ],
       "fieldConfig": {
@@ -1400,7 +1400,8 @@
           "mode": "multi",
           "sort": "none"
         }
-      }
+      },
+      "description": "Used % of every real disk (virtual/read-only filesystems excluded), one line per device. Covers separate chain-data disks, not just /."
     },
     {
       "type": "timeseries",
@@ -1417,7 +1418,7 @@
       },
       "targets": [
         {
-          "expr": "100 - avg(rate(node_cpu_seconds_total{mode=\"idle\",job=\"node-exporter\"}[5m])) * 100",
+          "expr": "100 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\",job=\"node-exporter\"}[5m])) * 100",
           "refId": "A",
           "legendFormat": "{{instance}}"
         }
@@ -1468,7 +1469,7 @@
       },
       "targets": [
         {
-          "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_total_bytes)) * 100",
+          "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
           "refId": "A",
           "legendFormat": "linux {{instance}}"
         },

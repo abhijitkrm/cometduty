@@ -84,6 +84,8 @@ decisions), `--json` for machine-parseable logs.
 |---|---|
 | All validators show `missed` but chain is producing blocks | CometBFT changed signature encoding, or `valcons` mismatch — run `validate --live` and compare cons addresses. |
 | `cometduty_notify_total{result="error"}` climbing | Notifier credentials expired or destination down — check `--alert-log` file for the per-attempt error. |
+| Container exits: `config /config/config.yml is a directory` | Host `config.yml` didn't exist when the container started, so docker created an empty directory at that path. `rmdir config.yml`, create the file (`example-config`), restart. |
+| `periodic state save failed … permission denied` / `alert history disabled` | State dir not writable by the service user — no dedup memory across restarts. Docker: the `/data` volume is root-owned (first used with an image from v0.2.0 or earlier) — `docker run --rm -v <vol>:/data alpine chown 65532:65532 /data`, restart. systemd: check `StateDirectory=` is in the unit. |
 | `/readyz` failing after deploy | Configured nodes unreachable from the pod (DNS/policy) — `kubectl exec` and curl the RPC. |
 | State file lost, alert storm on boot | Expected: no dedup memory. Set `resolve_alerts_on_start` temporarily or pre-seed the statefile. |
 | Alerts fire but PagerDuty incidents never close | `dedup_key` pairing only works when raise and resolve both deliver — check the JSONL log for resolve errors. |

@@ -2,8 +2,17 @@
 # the binary first; this stage only packages it (goreleaser's build context
 # contains ./cometduty, not the source tree). For a source build use the
 # root Dockerfile; for a pull-free local build use deploy/Dockerfile.local.
+
+# Distroless has no shell, so the state dir is made in a throwaway stage. It
+# must exist in the image owned by nonroot (uid 65532): docker seeds a fresh
+# named volume from the image's /data, ownership included — without it the
+# volume is created root-owned and state/alert-log writes fail with EACCES.
+FROM --platform=$BUILDPLATFORM busybox:1.37 AS datadir
+RUN install -d -o 65532 -g 65532 /data
+
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY cometduty /cometduty
+COPY --from=datadir --chown=65532:65532 /data /data
 USER nonroot:nonroot
 EXPOSE 28686
 ENTRYPOINT ["/cometduty", "-f", "/config/config.yml", "--state", "/data/state.json", "--alert-log", "/data/alerts.jsonl"]

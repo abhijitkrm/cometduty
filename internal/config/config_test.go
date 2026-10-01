@@ -1,6 +1,8 @@
 package config
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -216,5 +218,31 @@ func TestLoadEncryptedFile(t *testing.T) {
 func TestLoadRemoteRequiresPassword(t *testing.T) {
 	if _, err := Load("https://example.com/config.yml", "", ""); err == nil {
 		t.Error("remote load without password allowed")
+	}
+}
+
+// docker creates an empty directory when bind-mounting a host file that
+// doesn't exist — the error must say so rather than a bare "is a directory".
+func TestLoadConfigIsDirectory(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.Mkdir(p, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(p, "", "")
+	if err == nil {
+		t.Fatal("loading a directory as config succeeded")
+	}
+	if !strings.Contains(err.Error(), "is a directory") || !strings.Contains(err.Error(), "docker") {
+		t.Errorf("error lacks docker hint: %v", err)
+	}
+}
+
+func TestLoadConfigMissing(t *testing.T) {
+	_, err := Load(filepath.Join(t.TempDir(), "config.yml"), "", "")
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("want wrapped fs.ErrNotExist, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "example-config") {
+		t.Errorf("error lacks example-config hint: %v", err)
 	}
 }
