@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="865" viewBox="0 0 1920 865" role="img" aria-labelledby="t d">
+<title id="t">cometduty</title>
+<desc id="d">Monitoring and alerting for Cosmos-EVM validators. Shooting stars cross a twilight sky.</desc>
+<style>
+@font-face{font-family:"SG";font-weight:600;src:url(data:font/woff2;base64,d09GMgABAAAAAAWAAA8AAAAACmAAAAUlAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGjAbgUAcVgZgP1NUQVQcAFwRCAqIKIcDCxgAATYCJAMsBCAFhDIHIBugCMjEINys2SS1BKgaNcMqitaMip8h1nrgxeHf4U3lRAR5cY9P3KuaH4oukDFFAxYM2R/7JZuyO8e2XrE0Fo45CcvFihbIuugm4tZCUNnxzg4EgJQQ6aNBIFITsAomnbwKikNcniRBoV6HRTFUoDq6BsYhWTR5liHhEgA+kTILNn4ZsSFj6xlQiAXfGk1oiWkY/jvAGSHhB1f6kxv5M4SQ8L2KcweNUoiBojkQ00MD0zUSTfOvGF0G0RAkiSQkOcaeAuHcqbsuuhwmMIN5YoFoH8wyPDGweQzVQk2rAcpP64D+JcgGqEiRKt0nZBkhPScd6Oqna26HFGfRb/7/LlmHOZ8US0FuKE8nn1ObD4ZeCDtgHEjBqkSd4XB6SMwsli730PVqBj2QbPhp0ZDChiWs4DScJQhgsKSVnp8QPhLuEW4VbhFuEK4FgUGS+UQQEB+CKyXSpESmcBEge9F8jOshx+ChjuZpVEKCqLgoXZIVU5okSU7LS042+cMkyhfhxIEQ8bXeIGsWByIkyhdmRf4gGG9oyr+V+LZxgS3wbp4kvmfK0h95g/i2sv7DxP1Z4otEuEBoB+B99tXilBtvBUz+cJiUbREqGL/9+YOsPxgkvusNhbjAqaKJe4PB6tsd2JLJ0RzDEvbR4GQgQogvzPoRW0OkAaL7cOtkT9x6PDjL3d9gZ47mwN1xjAuEarhnvLwQKJaeVM/jaltdjOUN9nEHsf8koVnCEQ4cWMrLcZMvQ3OU9wTX7BdxFEvYW4MTRBwghL118362biHGe5ztoh8ue2juuTN2i1lqtltmusMt66aK2xp0aqgbdG2EsnGnRt2Bq7Kk2VnSrGzrf9N1e1bBk//t/i4nJ+/nktK6kqSxVLlMN1ikUPQXbq5kSk++79/9ojchBXJxj7vVsGaUGA1r7taebqtSPXnJcprm5FJ5ha6wuFPJKos7dEUV6u/XljNfUE9YVUgStzla1GvGBKN6zd6ilv1meiBRxG9e1Sfm9iqKLJoRYz87YBzWakaHB9j+USMqxX2rGg0/KBpSr61oensWNK1rAxXuzMHO5ibj+xsUbw9MVe5r+U9haK5v1Dej9/u1xsT9e2sb9FUkgfzTKusrqx5s6XZrq96tqOlrLOEllazlZKjEfZ42w+pwwrBhzdPa17cIOnHBqrut16YdNvayvcNGLfW3IEpxubLEt9F3j/ueqzdenZSXY9mIqJjmKZV8naacz297rEHdNdz/N//9amfiwQ4lLthnTczJ8yeuqV6WIcwbUJ6p6E67snFF3pydZdloGYA2Qts+vJcKasfv/9Auboxv+y2Wpr8szXjnzsLb/F2usggv/P8Jc5yxveOgaJL04FVZ/j/CC/81Mcfvty1HX4QNEF5EDUJJXQAl1QklPYVeygYlOYBsyoFOO52WILtlmMM6ei4zomBADxeJA/8GBZg4Pr4b/8ZmgmocN1OQYKeZRhsu7cnUm6OQhUVzNCphMEnQAJGb/LB2m4INLjjghMeu7cEq3GiBnDvODQt4uLAKD9yQka93YREyrICHA3IMowsDGMMqTLDAhm7wb2J9G9xYQA3GXs3TXDBgBYuwYhI28AC7rWAZUqggg8JsEa6vVnShH62AxOjmDpyGRZjAt+lLyjuWlm/HClZx1vLYxdPTgcLOl2IcToAOg8GYJuZhaRnV47QtpDdHctN9l29n1AFXbe3TYIYMFqzQYTnsHI1e3gUTlrGwCLiHwPIR8IM718CBip8WJS4m3AkVDAAAAA==) format("woff2")}
+@font-face{font-family:"SG";font-weight:400;src:url(data:font/woff2;base64,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) format("woff2")}
+@font-face{font-family:"PM";font-weight:400;src:url(data:font/woff2;base64,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) format("woff2")}
+.sg{font-family:"SG","Space Grotesk","Helvetica Neue",Arial,sans-serif}
+.pm{font-family:"PM","IBM Plex Mono",ui-monospace,Menlo,monospace}
+.meteor{opacity:0;animation:shoot 7s linear infinite}
+.m2{animation-delay:1.2s}.m3{animation-delay:2.6s}.m4{animation-delay:3.7s}.m5{animation-delay:4.9s}.m6{animation-delay:6.1s}
+@keyframes shoot{0%{transform:translate(0,0);opacity:0}3%{opacity:1}18%{transform:translate(-460px,193px);opacity:0}100%{transform:translate(-460px,193px);opacity:0}}
+.tw{animation:twinkle 3.2s ease-in-out infinite}.tw2{animation-delay:1.1s}.tw3{animation-delay:2.2s}
+@keyframes twinkle{0%,100%{opacity:1}50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.meteor{animation:none;opacity:.85}.tw{animation:none}}
+</style>
+<defs>
+<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#0B1230"/><stop offset=".34" stop-color="#17205A"/><stop offset=".6" stop-color="#352A6E"/><stop offset=".8" stop-color="#6E3C7C"/><stop offset=".94" stop-color="#C8687E"/><stop offset="1" stop-color="#F3A58B"/>
+</linearGradient>
+<linearGradient id="trail" x1="1" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#7a6cff" stop-opacity="0"/><stop offset=".55" stop-color="#e98bb0" stop-opacity=".6"/><stop offset=".9" stop-color="#F3958B" stop-opacity=".95"/><stop offset="1" stop-color="#fff4e6"/>
+</linearGradient>
+</defs>
+<rect width="1920" height="865" fill="url(#sky)"/>
+<g fill="#fff">
+<rect x="80" y="70" width="3" height="3" opacity="0.8"/>
+<rect x="210" y="160" width="2" height="2" opacity="0.6"/>
+<rect x="340" y="40" width="3" height="3" opacity="0.7"/>
+<rect x="470" y="210" width="2" height="2" opacity="0.5"/>
+<rect x="620" y="110" width="3" height="3" opacity="0.8"/>
+<rect x="760" y="60" width="2" height="2" opacity="0.6"/>
+<rect x="880" y="190" width="3" height="3" opacity="0.7"/>
+<rect x="1010" y="90" width="2" height="2" opacity="0.6"/>
+<rect x="1130" y="30" width="3" height="3" opacity="0.8"/>
+<rect x="1240" y="170" width="2" height="2" opacity="0.5"/>
+<rect x="1360" y="80" width="3" height="3" opacity="0.7"/>
+<rect x="1480" y="220" width="2" height="2" opacity="0.6"/>
+<rect x="1590" y="50" width="3" height="3" opacity="0.8"/>
+<rect x="1700" y="150" width="2" height="2" opacity="0.6"/>
+<rect x="1830" y="90" width="3" height="3" opacity="0.7"/>
+<rect x="1880" y="260" width="2" height="2" opacity="0.5"/>
+<rect x="1060" y="300" width="2" height="2" opacity="0.5"/>
+<rect x="1300" y="340" width="3" height="3" opacity="0.6"/>
+<rect x="1560" y="380" width="2" height="2" opacity="0.5"/>
+<rect x="1760" y="330" width="2" height="2" opacity="0.5"/>
+<rect x="1180" y="440" width="2" height="2" opacity="0.4"/>
+<rect x="1420" y="500" width="2" height="2" opacity="0.35"/>
+<rect x="1680" y="470" width="3" height="3" opacity="0.4"/>
+<rect x="960" y="520" width="2" height="2" opacity="0.35"/>
+<rect x="150" y="300" width="2" height="2" opacity="0.5"/>
+<rect x="60" y="460" width="2" height="2" opacity="0.4"/>
+<rect x="780" y="330" width="2" height="2" opacity="0.4"/>
+</g><g fill="#fff4e6">
+<g class="tw"><rect x="1218" y="118" width="4" height="12"/><rect x="1214" y="122" width="12" height="4"/></g>
+<g class="tw tw2"><rect x="1652" y="258" width="4" height="12"/><rect x="1648" y="262" width="12" height="4"/></g>
+<g class="tw tw3"><rect x="902" y="78" width="4" height="12"/><rect x="898" y="82" width="12" height="4"/></g>
+<g class="tw tw2"><rect x="1840" y="398" width="4" height="12"/><rect x="1836" y="402" width="12" height="4"/></g>
+<g class="tw"><rect x="700" y="720" width="3" height="9"/><rect x="697" y="723" width="9" height="3"/></g>
+</g><g stroke-linecap="round">
+<g class="meteor"><path d="M1500 60 l-300 126" stroke="url(#trail)" stroke-width="3" fill="none"/><circle cx="1200" cy="186" r="4" fill="#fff4e6"/></g>
+<g class="meteor m2"><path d="M1900 160 l-360 151" stroke="url(#trail)" stroke-width="3.5" fill="none"/><circle cx="1540" cy="311" r="5" fill="#fff4e6"/></g>
+<g class="meteor m3"><path d="M1180 20 l-240 101" stroke="url(#trail)" stroke-width="2.5" fill="none"/><circle cx="940" cy="121" r="3.5" fill="#fff4e6"/></g>
+<g class="meteor m4"><path d="M1760 20 l-280 118" stroke="url(#trail)" stroke-width="3" fill="none"/><circle cx="1480" cy="138" r="4" fill="#fff4e6"/></g>
+<g class="meteor m5"><path d="M1920 360 l-320 134" stroke="url(#trail)" stroke-width="3" fill="none"/><circle cx="1600" cy="494" r="4" fill="#fff4e6"/></g>
+<g class="meteor m6"><path d="M1400 230 l-260 109" stroke="url(#trail)" stroke-width="2.5" fill="none"/><circle cx="1140" cy="339" r="3.5" fill="#fff4e6"/></g>
+</g><g stroke-linecap="round" opacity=".5" fill="none">
+<path d="M1700 520 l-200 84" stroke="url(#trail)" stroke-width="2"/><path d="M1300 120 l-160 67" stroke="url(#trail)" stroke-width="2"/>
+</g>
+<text class="sg" x="98" y="385" font-size="196" font-weight="600" letter-spacing="-8" fill="#f4eefc">cometduty</text>
+<text class="sg" x="104" y="486" font-size="42" fill="#e6ddf6">Monitoring and alerting</text>
+<text class="sg" x="104" y="539" font-size="42" fill="#e6ddf6">for Cosmos-EVM validators.</text>
+<text class="pm" x="104" y="614" font-size="26" fill="#cbbde8">github.com/abhijitkrm/cometduty</text>
+</svg>
