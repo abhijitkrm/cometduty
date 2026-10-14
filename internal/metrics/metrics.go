@@ -420,12 +420,25 @@ func (e *Exporter) NotifyResult(dest string, ok bool) {
 	e.notifyResults.With(prometheus.Labels{"dest": dest, "result": res}).Inc()
 }
 
+// SilencesActive exports how many silences are in effect — one left on by
+// mistake is a monitor gone blind, so it is worth an alert of its own.
+func (e *Exporter) SilencesActive(count func() int) {
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "cometduty_silences_active",
+		Help: "Silences in effect now (alerts they match are held, not sent).",
+	}, func() float64 { return float64(count()) })
+}
+
 // Serve starts the metrics HTTP server. ready, when non-nil, backs /readyz —
 // a readiness probe that reports whether the monitor is actually observing
 // blocks (vs /healthz which only proves the process is up). It returns on
-// shutdown or fatal error.
-func Serve(ctxDone <-chan struct{}, bind string, port int, ready func() (bool, []string)) error {
+// shutdown or fatal error. routes, when non-nil, mounts more handlers (the
+// silence API) on the same listener.
+func Serve(ctxDone <-chan struct{}, bind string, port int, ready func() (bool, []string), routes func(*http.ServeMux)) error {
 	mux := http.NewServeMux()
+	if routes != nil {
+		routes(mux)
+	}
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

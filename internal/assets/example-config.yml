@@ -36,14 +36,22 @@ slack:
   webhook: https://hooks.slack.com/services/AAA/BBB
   mentions: ["<!channel>"]
 
-# generic JSON webhook — body is a Go template over the alert object:
-#   {{.Chain}} {{.ChainID}} {{.Severity}} {{.Message}} {{.Moniker}} {{.Valcons}}
-#   {{.Resolved}} {{.Time}} {{.Fields.endpoint}} etc.
+# generic JSON webhook. Without template_body it sends the versioned JSON
+# payload in docs/WEBHOOK.md (key, kind, target, node, labels, status, …).
+# template_body is a Go template over the alert object instead:
+#   {{.Chain}} {{.ChainID}} {{.Kind}} {{.Target}} {{.Node}} {{.Severity}}
+#   {{.Message}} {{.Moniker}} {{.Valcons}} {{.Resolved}} {{.Time}} {{.Labels.profile}}
 webhook:
   enabled: no
   url: https://example.com/hook
+  # secret: ${WEBHOOK_SECRET}   # HMAC-SHA256 signature headers (docs/WEBHOOK.md)
   # template_body: '{"text":"{{.Chain}}: {{.Message}}"}'
   # headers: {Authorization: "Bearer x"}
+
+# silence API on the prometheus listener, Alertmanager v2 compatible
+# (POST/GET /api/v2/silences, DELETE /api/v2/silence/{id}) — needs
+# "Authorization: Bearer <token>". Empty = off.
+# api_token: ${COMETDUTY_API_TOKEN}
 
 ntfy:
   enabled: no
@@ -154,6 +162,7 @@ chains:
       - url: tcp://localhost:26657
         name: local sentry      # shown instead of the raw URL
         alert_if_down: yes
+        # labels: {profile: val1}   # travel with this node's alerts (webhook, silences)
         # validator: validator-01   # moniker of the validator this node serves — adds a
                                     # `validator` label to node metrics (per-validator views)
         # evm_rpc: http://localhost:8545   # this node's own EVM endpoint — per-validator

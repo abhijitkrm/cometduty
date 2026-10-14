@@ -12,7 +12,7 @@ raise.
 |---|---|---|---|
 | `stalled:<chain-id>` | critical | No new block for `stalled_minutes`. The whole chain halted — not just your validator. | Check CometBFT logs on multiple validators; look for consensus deadlock, >⅓ VP offline, or an upgrade mismatch. |
 | `no-nodes:<chain-id>` | critical | Every configured RPC endpoint is unreachable or catching up. | cometduty is blind — check endpoints/network first, then whether the nodes themselves are down. |
-| `node-down:<url>` | `node_down_alert_severity` | One endpoint unreachable for `node_down_alert_minutes`. | Check the process/container; if intentional (maintenance), ignore or remove `alert_if_down`. |
+| `node-down:<url>` | `node_down_alert_severity` | One endpoint unreachable for `node_down_alert_minutes`. | Check the process/container; for planned maintenance, silence it first (`docs/WEBHOOK.md`). |
 | `node-lag:<url>` | warning | Endpoint is `lag_blocks`+ behind the best-seen height. | Node is stale or partitioned — check its peers and sync status before trusting its data. |
 | `consecutive:<valcons>` | `consecutive_priority` | Validator missed `consecutive_missed` blocks in a row. | Check validator process, consensus key health, disk I/O. If it's also jailed, an `inactive:` alert follows. |
 | `window-pct:<valcons>` | `percentage_priority` | Missed >`percentage_missed`% of the slashing window — approaching the chain's jail threshold. | Treat as pre-jail warning: fix the signing problem before the chain jails the validator. |

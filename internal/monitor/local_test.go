@@ -124,3 +124,23 @@ func TestProbeLocalSkipsWithoutHome(t *testing.T) {
 		t.Fatal("no alerts expected without a home mount")
 	}
 }
+
+// Alerts about a node carry its name and labels, so receivers and silences
+// can name it without knowing its URL.
+func TestAlertsCarryNodeNameAndLabels(t *testing.T) {
+	cc := &config.ChainConfig{ChainID: "test-1", Nodes: []*config.NodeConfig{{
+		URL: "http://n:26657", Name: "val1", EvmRPC: "http://n:8545",
+		Labels: map[string]string{"profile": "val1-prod"},
+	}}}
+	got := make(chan alert.Alert, 4)
+	eng := alert.NewEngine(func(a *alert.Alert) []alert.ResolvedDest {
+		got <- *a
+		return nil
+	}, 0, 0)
+	c := NewChain("test", cc, func() *config.Config { return &config.Config{} }, eng, nil)
+	c.alert("test-1", nil, "evm-down:http://n:8545", false, "warning", "evm down")
+	a := <-got
+	if a.Kind != "evm-down" || a.Target != "http://n:8545" || a.Node != "val1" || a.Labels["profile"] != "val1-prod" {
+		t.Fatalf("alert %+v", a)
+	}
+}

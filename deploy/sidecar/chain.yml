@@ -7,9 +7,12 @@ prometheus_listen_port: ${METRICS_PORT}
 node_down_alert_minutes: 3
 flap_suppression_minutes: 15
 
+api_token: ${API_TOKEN}
+
 webhook:
-  enabled: no
-  # url: https://hooks.example.com/cometduty
+  enabled: ${WEBHOOK_ENABLED}
+  url: ${WEBHOOK_URL}
+  secret: ${WEBHOOK_SECRET}
 
 chains:
   "${CHAIN_NAME}":
@@ -22,20 +25,15 @@ chains:
       alert_if_no_servers: yes
       set_watch_enabled: yes          # validator-new / validator-gone / validator-jailed
       # everything else stays off here — the sidecars page for those
-      webhook: {enabled: no}
+      webhook: {enabled: yes}       # on when the global webhook is on
 
-    # all validator RPC endpoints as data sources — no alert_if_down, the
-    # sidecars own node-down paging.
+    # every node's RPC as a data source — no alert_if_down, the sidecars own
+    # node-down paging. One entry per node; labels travel with its alerts.
     nodes:
-      - url: ${NODE0_RPC}
-        name: validator-0
-        validator: validator-01
-      - url: ${NODE1_RPC}
+      - url: http://10.0.0.11:26657
         name: validator-1
-        validator: validator-02
-      - url: ${NODE2_RPC}
+        validator: validator-1
+        # labels: {profile: validator-1}
+      - url: http://10.0.0.12:26657
         name: validator-2
-        validator: validator-03
-      - url: ${NODE3_RPC}
-        name: validator-3
-        validator: validator-04
+        validator: validator-2

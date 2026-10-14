@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -258,5 +259,43 @@ func TestNon2xxIsError(t *testing.T) {
 	err := (Webhook{}).Send(context.Background(), testAlert(), config.WebhookConfig{URL: srv.URL})
 	if err == nil || !strings.Contains(err.Error(), "418") {
 		t.Errorf("non-2xx not an error: %v", err)
+	}
+}
+
+func TestWebhookPayloadV1(t *testing.T) {
+	srv, cap := stub(t)
+	a := testAlert()
+	a.Kind, a.Target, a.Node = "consecutive", "ABCD", "val1"
+	a.Labels = map[string]string{"profile": "val1"}
+	if err := (Webhook{}).Send(context.Background(), a, config.WebhookConfig{URL: srv.URL}); err != nil {
+		t.Fatal(err)
+	}
+	var p Payload
+	if err := json.Unmarshal(cap.body, &p); err != nil {
+		t.Fatal(err)
+	}
+	if p.Version != "1" || p.Source != "cometduty" || p.Status != "firing" || p.Key != "missed:ABCD" ||
+		p.Kind != "consecutive" || p.Node != "val1" || p.Labels["profile"] != "val1" {
+		t.Errorf("payload: %+v", p)
+	}
+	if cap.header.Get(SignatureHeader) != "" {
+		t.Error("signed without a secret")
+	}
+}
+
+func TestWebhookSignature(t *testing.T) {
+	srv, cap := stub(t)
+	if err := (Webhook{}).Send(context.Background(), testAlert(), config.WebhookConfig{URL: srv.URL, Secret: "s3cret"}); err != nil {
+		t.Fatal(err)
+	}
+	ts, err := strconv.ParseInt(cap.header.Get(TimestampHeader), 10, 64)
+	if err != nil || time.Since(time.Unix(ts, 0)) > time.Minute {
+		t.Fatalf("timestamp header: %q", cap.header.Get(TimestampHeader))
+	}
+	if got, want := cap.header.Get(SignatureHeader), Sign("s3cret", ts, cap.body); got != want {
+		t.Errorf("signature %q, want %q", got, want)
+	}
+	if Sign("other", ts, cap.body) == cap.header.Get(SignatureHeader) {
+		t.Error("signature does not depend on the secret")
 	}
 }

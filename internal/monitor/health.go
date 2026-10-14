@@ -698,10 +698,19 @@ func (c *Chain) alert(chainID string, tg *Target, key string, resolved bool, sev
 		Resolved: resolved,
 		Time:     time.Now(),
 	}
-	if tg != nil && tg.info != nil {
-		a.Moniker = tg.info.Moniker
-		a.Valcons = tg.info.Valcons
-		a.Scoped = tg.vc.Alerts
+	a.Kind, a.Target, _ = strings.Cut(key, ":")
+	if tg != nil {
+		a.Labels = tg.vc.Labels
+		if tg.info != nil {
+			a.Moniker = tg.info.Moniker
+			a.Valcons = tg.info.Valcons
+			a.Scoped = tg.vc.Alerts
+		}
+	}
+	if m := c.nodeMeta.Load(); m != nil {
+		if nm, ok := (*m)[a.Target]; ok {
+			a.Node, a.Labels = nm.name, nm.labels
+		}
 	}
 	if resolved {
 		if c.eng.HasOpen(key) {

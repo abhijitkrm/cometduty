@@ -5,6 +5,28 @@ All notable changes to cometduty are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Webhook payload v1.** Without `template_body`, the webhook sends a
+  versioned JSON document: `status`, `key`, `kind`, `target`, `node`,
+  `labels`, `reminder` alongside the old fields (still present). Templates
+  can use `{{.Kind}}`, `{{.Target}}`, `{{.Node}}`, `{{.Labels.x}}`. See
+  `docs/WEBHOOK.md`.
+- **Signed webhooks.** `webhook.secret` adds `X-Cometduty-Timestamp` and
+  `X-Cometduty-Signature` (HMAC-SHA256 over `<timestamp>.<body>`).
+- **Silence API**, Alertmanager v2 compatible, on the prometheus listener
+  when `api_token` is set. Silenced raises are held and sent if still open
+  when the silence ends; conditions that clear meanwhile never page.
+  Silences persist in `--state`; `cometduty_silences_active` counts them.
+- `labels:` on nodes and validators — carried by their alerts into the
+  webhook and usable in silence matchers.
+
+### Changed
+
+- `deploy/sidecar` is generic: `compose.yml` runs one sidecar per validator
+  host on the host network (any node layout), `compose.chain.yml` the central
+  instance. The primium-specific overlay is gone.
+
 ### Fixed
 
 - Loading a config path that is a directory now fails with an actionable

@@ -25,6 +25,16 @@ type Alert struct {
 	Valcons  string
 	Time     time.Time
 
+	// Kind and Target split Key ("node-down:<url>" → "node-down", "<url>");
+	// Dispatch fills them in when empty.
+	Kind   string
+	Target string
+	// Node is the friendly name of the node the alert is about, when it is
+	// about one. Labels are the operator's labels for that node or validator.
+	Node     string
+	Labels   map[string]string
+	Reminder bool // a re-send of a still-open alert
+
 	// Fields carries template variables for webhook/ntfy bodies.
 	Fields map[string]string
 
@@ -68,6 +78,10 @@ type Engine struct {
 	flapped map[string]map[string]time.Time
 	// active[chain] = set of open alert keys (metrics + dedup state)
 	active map[string]map[string]time.Time
+	// silences by id; held[key] = a raise an active silence muted, sent if
+	// still open when the silence ends
+	silences map[string]*Silence
+	held     map[string]Alert
 }
 
 type sentEntry struct {
@@ -96,6 +110,8 @@ func NewEngine(resolveFn func(*Alert) []ResolvedDest, flapMin, remindMin time.Du
 		sent:          map[string]map[string]*sentEntry{},
 		flapped:       map[string]map[string]time.Time{},
 		active:        map[string]map[string]time.Time{},
+		silences:      map[string]*Silence{},
+		held:          map[string]Alert{},
 	}
 }
 
@@ -123,6 +139,9 @@ func (e *Engine) Dispatch(ctx context.Context, a Alert) {
 	if a.Time.IsZero() {
 		a.Time = time.Now()
 	}
+	if a.Kind == "" {
+		a.Kind, a.Target = splitKey(a.Key)
+	}
 	dests := e.resolve(&a)
 
 	e.mu.Lock()
@@ -131,8 +150,15 @@ func (e *Engine) Dispatch(ctx context.Context, a Alert) {
 	}
 	if a.Resolved {
 		delete(e.active[a.Chain], a.Key)
+		delete(e.held, a.Key)
 	} else {
 		e.active[a.Chain][a.Key] = a.Time
+		if e.silencedLocked(&a) {
+			e.held[a.Key] = a
+			e.mu.Unlock()
+			slog.Info("alert silenced", "chain", a.Chain, "key", a.Key)
+			return
+		}
 	}
 	e.mu.Unlock()
 
@@ -307,10 +333,11 @@ func (e *Engine) RunReminders(ctx context.Context) {
 					if se.Alert.Key == "" {
 						continue // restored state has no payload to resend
 					}
-					if time.Since(se.When) >= e.remindMinutes {
+					if time.Since(se.When) >= e.remindMinutes && !e.silencedLocked(&se.Alert) {
 						se.When = time.Now()
 						a := se.Alert
 						a.Message = fmt.Sprintf("(reminder) %s", a.Message)
+						a.Reminder = true
 						for _, d := range e.resolve(&a) {
 							if d.Kind == kind && n != nil {
 								due = append(due, dueItem{n: n, d: d, a: a})
