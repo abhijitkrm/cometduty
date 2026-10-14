@@ -34,6 +34,11 @@ type Config struct {
 	Ntfy      NtfyConfig      `yaml:"ntfy"`     // new: ntfy.sh / self-hosted push
 	Opsgenie  OpsgenieConfig  `yaml:"opsgenie"` // new
 
+	// APIToken enables the silence API (/api/v2/silences, Alertmanager-
+	// compatible) on the prometheus listener; requests need "Bearer <token>".
+	// Empty = no API.
+	APIToken string `yaml:"api_token"`
+
 	// Dead-man's-switch ping for the monitor itself.
 	Healthcheck HealthcheckConfig `yaml:"healthcheck"`
 
@@ -84,6 +89,9 @@ type WebhookConfig struct {
 	Headers      map[string]string `yaml:"headers"`
 	TemplateBody string            `yaml:"template_body"` // Go template producing the POST body
 	Method       string            `yaml:"method"`        // default POST
+	// Secret, when set, signs every POST (X-Cometduty-Signature: HMAC-SHA256
+	// over "<X-Cometduty-Timestamp>.<body>") so the receiver can verify it.
+	Secret string `yaml:"secret"`
 }
 
 // NtfyConfig posts to an ntfy.sh-compatible topic.
@@ -165,6 +173,9 @@ type ValidatorConfig struct {
 	ConsPrefix      string       `yaml:"cons_prefix"`
 	Label           string       `yaml:"label"`
 	Alerts          *AlertConfig `yaml:"alerts"` // optional per-validator overrides
+	// Labels travel with this validator's alerts (webhook labels, silence
+	// matchers), e.g. {profile: val1} to name it in another tool.
+	Labels map[string]string `yaml:"labels"`
 }
 
 // AlertConfig is the alert policy for a chain or validator.
@@ -248,6 +259,7 @@ type NodeConfig struct {
 	InsecureTLS bool              `yaml:"insecure_tls"` // allow self-signed certs
 	Headers     map[string]string `yaml:"headers"`      // extra HTTP headers, e.g. Authorization
 	DisableVote bool              `yaml:"disable_vote"` // don't use this node for vote subscriptions
+	Labels      map[string]string `yaml:"labels"`       // travel with this node's alerts (webhook labels, silence matchers)
 }
 
 // LogConfig turns on pattern-based log alerting for a node. cometduty watches
@@ -325,6 +337,14 @@ func Validate(c *Config) (fatal bool, problems []string) {
 	}
 	if c.NodeDownMin < 3 {
 		problems = append(problems, "warn: node_down_alert_minutes < 3 can cause false alarms")
+	}
+	if c.APIToken != "" && !c.PrometheusEnabled {
+		problems = append(problems, "error: api_token is set but prometheus_enabled is off — the silence API is served on the prometheus listener")
+		fatal = true
+	}
+	if c.APIToken != "" && len(c.APIToken) < 16 {
+		problems = append(problems, "error: api_token is shorter than 16 characters")
+		fatal = true
 	}
 	if c.Webhook.Enabled && c.Webhook.URL == "" {
 		problems = append(problems, "error: webhook enabled but no url configured")

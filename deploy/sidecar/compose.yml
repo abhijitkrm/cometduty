@@ -1,0 +1,72 @@
+# cometduty sidecar — one per validator host, next to the node.
+#
+# The sidecar uses the host network and reaches the node on the ports it
+# publishes on the host (127.0.0.1:26657 etc. by default), so it works with
+# any node layout: a container, a systemd service, or a binary.
+#
+#   ┌─────────────────────────┐    ┌─────────────────────────┐
+#   │ your node               │    │ cometduty (sidecar)     │
+#   │ 26657 8545 26660        │◄───│ role: sidecar           │──► :28686/metrics
+#   └─────────────────────────┘    └─────────────────────────┘
+#
+# Fill in .env (see .env.example), then:
+#
+#   docker compose --env-file .env up -d
+#
+# Several nodes on one host: one .env per node (different METRICS_PORT,
+# NODE_* ports and NODE_HOME) and a project name each:
+#
+#   docker compose -p cometduty-val1 --env-file val1.env up -d
+#
+# The central chain-role instance is compose.chain.yml.
+
+services:
+  cometduty:
+    image: ${COMETDUTY_IMAGE:-ghcr.io/abhijitkrm/cometduty:latest}
+    restart: unless-stopped
+    read_only: true
+    network_mode: host
+    environment:
+      CHAIN_NAME: ${CHAIN_NAME:?set CHAIN_NAME}
+      CHAIN_ID: ${CHAIN_ID:?set CHAIN_ID}
+      VALIDATOR: ${VALIDATOR:?set VALIDATOR (the moniker)}
+      VALOPER: ${VALOPER:?set VALOPER}
+      METRICS_PORT: ${METRICS_PORT:-28686}
+      NODE_RPC: ${NODE_RPC:-http://127.0.0.1:26657}
+      NODE_EVM: ${NODE_EVM:-http://127.0.0.1:8545}
+      NODE_METRICS: ${NODE_METRICS:-http://127.0.0.1:26660}
+      NODE_HOME: /node-home
+      NODE_CONTAINER: ${NODE_CONTAINER:-}
+      DOCKER_HOST: tcp://127.0.0.1:${DOCKER_PROXY_PORT:-2375}
+      LOGS_ENABLED: ${LOGS_ENABLED:-no}
+      WEBHOOK_ENABLED: ${WEBHOOK_ENABLED:-no}
+      WEBHOOK_URL: ${WEBHOOK_URL:-http://127.0.0.1:1}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
+      API_TOKEN: ${API_TOKEN:-}
+    volumes:
+      - ./sidecar.yml:/config/config.yml:ro
+      - ${NODE_HOME:?set NODE_HOME (host path of the node home)}:/node-home:ro
+      - cometduty-state:/data
+
+  # Read-only docker API for the log watcher (LOGS_ENABLED=yes with a
+  # NODE_CONTAINER) — container listing and log streaming only, on loopback.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    restart: unless-stopped
+    profiles: [logs]
+    environment:
+      CONTAINERS: "1"
+      LOGS: "1"
+      POST: "0"
+      NETWORKS: "0"
+      IMAGES: "0"
+      EXEC: "0"
+      INFO: "0"
+      VERSION: "0"
+      EVENTS: "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports: ["127.0.0.1:${DOCKER_PROXY_PORT:-2375}:2375"]
+
+volumes:
+  cometduty-state:

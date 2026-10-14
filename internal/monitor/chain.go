@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/abhijitkrm/cometduty/internal/alert"
@@ -111,6 +112,7 @@ type evmProbe struct {
 	downSince   time.Time
 	downAlarm   bool
 	height      int64
+	lag         int64 // consensus height minus height, measured when height was read
 	syncing     bool
 	lastMsg     string
 	pending     int64
@@ -160,6 +162,15 @@ type Chain struct {
 
 	setSnapshot map[string]setEntry // last full validator-set view (set-watch)
 	setPrimed   bool                // baseline established — start diffing
+
+	// nodeMeta maps each node's URLs (rpc, evm_rpc, metrics_url) to its name
+	// and labels, for tagging alerts. Read without mu: alert() runs under it.
+	nodeMeta atomic.Pointer[map[string]nodeMeta]
+}
+
+type nodeMeta struct {
+	name   string
+	labels map[string]string
 }
 
 // NewChain builds a monitor for one chain. rootFn must return the current
@@ -197,6 +208,19 @@ func (c *Chain) rebuildLocked(cc *config.ChainConfig) {
 		}
 		c.nodes = append(c.nodes, ns)
 	}
+	meta := map[string]nodeMeta{}
+	for _, n := range cc.Nodes {
+		m := nodeMeta{name: n.Name, labels: n.Labels}
+		if m.name == "" {
+			m.name = n.URL
+		}
+		for _, u := range []string{n.URL, n.EvmRPC, n.MetricsURL} {
+			if u != "" {
+				meta[u] = m
+			}
+		}
+	}
+	c.nodeMeta.Store(&meta)
 	c.targets = make([]*Target, 0)
 	c.byAddr = map[string]*Target{}
 	for _, vc := range cc.ValidatorTargets() {
@@ -269,8 +293,13 @@ func (c *Chain) pickClient(ctx context.Context) error {
 		c.mu.Lock()
 		if err != nil {
 			n.down, n.lastMsg = true, err.Error()
-			if st != nil && st.SyncInfo.CatchingUp {
-				n.syncing = true
+			if st != nil && st.SyncInfo.CatchingUp && !n.syncing {
+				// a sync episode begins here too: start its clock, or
+				// "syncing for" is measured from the zero time
+				now := time.Now()
+				n.syncing, n.syncSince, n.syncLastChange = true, now, now
+				n.height = int64(st.SyncInfo.LatestBlockHeight)
+				n.syncStartHeight, n.syncLastHeight = n.height, n.height
 			}
 			c.mu.Unlock()
 			if firstErr == nil {

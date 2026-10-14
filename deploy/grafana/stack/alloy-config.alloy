@@ -1,6 +1,6 @@
 // Grafana Alloy — reads every docker container's logs via the engine socket
 // and pushes them to Loki, labeled by container name. Restrict the keep rule
-// to your validators (e.g. regex = "primium-.*") if the host runs other
+// to your validators (e.g. regex = "mychain-.*") if the host runs other
 // workloads.
 
 discovery.docker "containers" {

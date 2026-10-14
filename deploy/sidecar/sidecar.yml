@@ -16,10 +16,15 @@ node_down_alert_minutes: 3
 node_down_alert_severity: critical
 flap_suppression_minutes: 15
 
-# Destinations — enable one and set credentials via env.
+# Silence API (Alertmanager v2 compatible) — empty token = off.
+api_token: ${API_TOKEN}
+
+# Destinations — enable one and set credentials via env. The webhook sends the
+# JSON payload in docs/WEBHOOK.md, signed when a secret is set.
 webhook:
-  enabled: no
-  # url: https://hooks.example.com/cometduty
+  enabled: ${WEBHOOK_ENABLED}
+  url: ${WEBHOOK_URL}
+  secret: ${WEBHOOK_SECRET}
 
 chains:
   "${CHAIN_NAME}":
@@ -60,18 +65,18 @@ chains:
       cpu_pct_alert: 0
       mem_bytes_alert: 0
 
-      webhook: {enabled: no}       # enable + url to receive this sidecar's alerts
+      webhook: {enabled: yes}      # on when the global webhook is on
 
     nodes:
-      - url: ${NODE_RPC}                 # e.g. tcp://primium-validator0:26657 | tcp://localhost:28657
+      - url: ${NODE_RPC}                 # e.g. http://127.0.0.1:26657
         name: ${VALIDATOR}
         validator: ${VALIDATOR}          # joins node metrics to the validator
-        evm_rpc: ${NODE_EVM}             # e.g. http://primium-validator0:8545
+        evm_rpc: ${NODE_EVM}             # e.g. http://127.0.0.1:8545
         metrics_url: ${NODE_METRICS}     # node's own prometheus endpoint base (:26660)
         home: ${NODE_HOME}               # read-only mount / host dir of node home
         alert_if_down: yes
         logs:
-          enabled: yes
+          enabled: ${LOGS_ENABLED}
           source: docker                 # docker | file
           docker_host: ${DOCKER_HOST}    # tcp://proxy:2375 or unix:///var/run/docker.sock
           container: ${NODE_CONTAINER}   # the validator's container name

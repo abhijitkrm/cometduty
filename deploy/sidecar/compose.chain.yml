@@ -1,0 +1,25 @@
+# The central chain-role instance — one per network. List every node's RPC
+# in chain.yml first.
+#
+#   docker compose -f compose.chain.yml --env-file .env up -d
+
+services:
+  cometduty-chain:
+    image: ${COMETDUTY_IMAGE:-ghcr.io/abhijitkrm/cometduty:latest}
+    restart: unless-stopped
+    read_only: true
+    environment:
+      CHAIN_NAME: ${CHAIN_NAME:?set CHAIN_NAME}
+      CHAIN_ID: ${CHAIN_ID:?set CHAIN_ID}
+      METRICS_PORT: "28686"
+      WEBHOOK_ENABLED: ${WEBHOOK_ENABLED:-no}
+      WEBHOOK_URL: ${WEBHOOK_URL:-http://127.0.0.1:1}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
+      API_TOKEN: ${API_TOKEN:-}
+    volumes:
+      - ./chain.yml:/config/config.yml:ro
+      - cometduty-chain-state:/data
+    ports: ["${CHAIN_METRICS_PORT:-28690}:28686"]
+
+volumes:
+  cometduty-chain-state:

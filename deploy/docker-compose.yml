@@ -7,7 +7,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./config.yml:/config/config.yml:ro
-      - ./chains.d:/etc/cometduty/chains.d:ro   # optional per-chain files
+      - ./chains.d:/config/chains.d:ro          # optional per-chain files
       - cometduty-data:/data
     ports:
       - "28686:28686"   # prometheus

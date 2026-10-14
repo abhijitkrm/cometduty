@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 
 	"github.com/abhijitkrm/cometduty/internal/alert"
 	"github.com/abhijitkrm/cometduty/internal/alert/notifiers"
+	"github.com/abhijitkrm/cometduty/internal/api"
 	"github.com/abhijitkrm/cometduty/internal/config"
 	"github.com/abhijitkrm/cometduty/internal/history"
 	"github.com/abhijitkrm/cometduty/internal/logging"
@@ -63,13 +65,18 @@ func runMonitor(cmd *cobra.Command) error {
 	eng := alert.NewEngine(nil,
 		time.Duration(cfg.FlapMinutes)*time.Minute,
 		time.Duration(cfg.RemindMinutes)*time.Minute)
+	cards := "" // Telegram incident cards live beside the state file
+	if stateFile != "" {
+		cards = filepath.Join(filepath.Dir(stateFile), "telegram-cards.json")
+	}
 	for _, n := range []alert.Notifier{
-		notifiers.Slack{}, notifiers.Discord{}, notifiers.Telegram{},
+		notifiers.Slack{}, notifiers.Discord{}, notifiers.NewTelegram(cards),
 		notifiers.PagerDuty{}, notifiers.Webhook{}, notifiers.Ntfy{}, notifiers.Opsgenie{},
 	} {
 		eng.Register(n)
 	}
 	eng.Restore(snap.Alarms, 24*time.Hour)
+	eng.RestoreSilences(snap.Silences)
 	if cfg.ResolveOnStart {
 		// close out alerts that were open when we last ran so downstream
 		// incidents (PagerDuty etc.) don't linger; still-broken conditions
@@ -89,6 +96,7 @@ func runMonitor(cmd *cobra.Command) error {
 	var sink monitor.MetricsSink
 	if cfg.PrometheusEnabled {
 		exp = metrics.New(Version)
+		exp.SilencesActive(eng.ActiveSilences)
 		sink = exp
 	}
 
@@ -116,15 +124,21 @@ func runMonitor(cmd *cobra.Command) error {
 
 	if exp != nil {
 		go func() {
-			if err := metrics.Serve(ctx.Done(), cfg.PrometheusBind, cfg.PrometheusListenPort, sup.Ready); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			if err := metrics.Serve(ctx.Done(), cfg.PrometheusBind, cfg.PrometheusListenPort, sup.Ready, func(mux *http.ServeMux) {
+				api.Register(mux, cfg.APIToken, eng)
+			}); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				slog.Error("prometheus exporter failed", "err", err)
 			}
 		}()
 		slog.Info("prometheus metrics", "addr", fmt.Sprintf("%s:%d/metrics", cfg.PrometheusBind, cfg.PrometheusListenPort))
+		if cfg.APIToken != "" {
+			slog.Info("silence API", "addr", fmt.Sprintf("%s:%d/api/v2/silences", cfg.PrometheusBind, cfg.PrometheusListenPort))
+		}
 	}
 	sup.Start(ctx)
 
 	go eng.RunReminders(ctx)
+	go eng.RunSilences(ctx)
 
 	// --- healthcheck pings ---
 	if cfg.Healthcheck.Enabled && cfg.Healthcheck.PingURL != "" {
@@ -136,6 +150,7 @@ func runMonitor(cmd *cobra.Command) error {
 		return &state.Snapshot{
 			Alarms:    eng.Snapshot(),
 			NodesDown: sup.SnapshotNodesDown(),
+			Silences:  eng.Silences(),
 		}
 	}
 	go store.StartPeriodic(ctx, 2*time.Minute, collect)

@@ -187,6 +187,19 @@ incidents auto-close — even across restarts, since open alerts persist in
 PagerDuty · Slack · Discord · Telegram · generic templated JSON **webhook**
 (Teams, Mattermost, Gotify, Home Assistant…) · **ntfy** · **Opsgenie**.
 
+Telegram gets one **card per incident**, edited as it changes: alerts about
+the same node share its card (a stopped node is down, its EVM RPC is down,
+then it catches up — one card), each with a plain-language reason and the
+raw messages collapsed beneath. Recovery edits the card and posts a short
+reply; a worse condition later, and reminders, are replies too. Card ids
+are kept beside `--state` (`telegram-cards.json`).
+
+The webhook's default body is a versioned JSON document (alert key, kind,
+target, node, your labels, firing/resolved), optionally HMAC-signed — any
+tool can act on it. An optional **silence API**, compatible with
+Alertmanager's, mutes alerts during planned work (amtool and Grafana work
+with it). Both are described in [docs/WEBHOOK.md](docs/WEBHOOK.md).
+
 The engine handles dedup per destination, flap suppression, periodic
 reminders for still-open alerts, per-validator destination overrides, and one
 bounded retry on failed sends. Every delivery attempt is counted in
@@ -216,10 +229,12 @@ All per-node and EVM series carry a `validator` label when the node's
 - `cometduty_node_disk_free_bytes`, `cometduty_node_signer_height` — local checks via the node's read-only `home` mount
 - `cometduty_log_lines_total{level}`, `cometduty_log_matches_total{rule,severity}` — the per-node log watcher
 - `cometduty_notify_total{dest,result}` — notifier delivery attempts; alert on `result="error"`
+- `cometduty_silences_active` — silences in effect (alerts they match are held)
 - `cometduty_last_block_height`, `cometduty_time_since_last_block`, `cometduty_active_alerts`, `cometduty_total_(un)healthy_endpoints`
 
 Endpoints on the same listener: `/healthz` (process liveness), `/readyz`
-(≥1 healthy endpoint and a fresh block per chain — k8s readiness). A
+(≥1 healthy endpoint and a fresh block per chain — k8s readiness), and with
+`api_token` set, the silence API under `/api/v2/`. A
 provisioned multi-validator Grafana dashboard lives in `deploy/grafana/`,
 with a runnable Prometheus+Grafana stack in `deploy/grafana/stack/`.
 
@@ -237,7 +252,10 @@ cometduty version              build info
 
 cometduty is a daemon, not a toolbox — interactive node ops (`doctor`,
 `status`, `unjail`, tx, upgrades) live in the sibling
-[cometcli](https://github.com/abhijitkrm/cometcli) project.
+[cometcli](https://github.com/abhijitkrm/cometcli) project. Each works on
+its own; if you run both, cometcli can write cometduty's config for networks
+it manages, receive its webhook to start work on an alert at once, and
+silence alerts while it upgrades or restarts a node.
 
 Global flags: `-f/--config` (file or https:// URL), `--chains-dir`,
 `--state`, `--alert-log` (JSONL delivery audit log, empty disables),
@@ -287,6 +305,7 @@ guide, and `deploy/k8s/` for Kubernetes manifests.
 
 - [docs/RUNBOOK.md](docs/RUNBOOK.md) — alert catalog, per-alert response, ops guide
 - [docs/MIGRATING.md](docs/MIGRATING.md) — tenderduty v2 config deltas
+- [docs/WEBHOOK.md](docs/WEBHOOK.md) — webhook payload, signatures, silence API
 - [deploy/grafana/](deploy/grafana/) — dashboard JSON + local observability stack
 - [deploy/k8s/](deploy/k8s/) — Kubernetes deployment manifests
 - [CONTRIBUTING.md](CONTRIBUTING.md) · MIT licensed
@@ -308,7 +327,8 @@ internal/config      v3 YAML schema, env expansion, chains.d, age, validation
 internal/rpc         minimal JSON-RPC + websocket client
 internal/monitor     per-chain supervisor: sign machine, health, val info
 internal/evm         minimal EVM JSON-RPC client
-internal/alert       dedup/resolve/flap/reminder engine + notifiers
+internal/alert       dedup/resolve/flap/reminder/silence engine + notifiers
+internal/api         Alertmanager-compatible silence API
 internal/history     JSONL alert audit log
 internal/state       atomic JSON persistence
 internal/metrics     prometheus exporter

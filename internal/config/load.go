@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -53,6 +54,16 @@ func Load(source, chainDir, password string) (*Config, error) {
 
 	if chainDir != "" {
 		if err := mergeChainDir(c, chainDir); err != nil {
+			return nil, err
+		}
+	} else if !strings.Contains(source, "://") {
+		// the default: chains.d beside the config file. It is optional, so a
+		// directory this user can't read (e.g. running as a node's uid) is
+		// skipped rather than fatal; an explicit --chains-dir is strict.
+		def := filepath.Join(filepath.Dir(source), "chains.d")
+		if err := mergeChainDir(c, def); errors.Is(err, fs.ErrPermission) {
+			slog.Warn("skipping unreadable default chains dir", "dir", def)
+		} else if err != nil {
 			return nil, err
 		}
 	}

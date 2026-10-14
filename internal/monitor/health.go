@@ -189,6 +189,13 @@ func (c *Chain) probeEVM(ctx context.Context, p *evmProbe) {
 	}
 	p.down, p.syncing, p.lastMsg = false, false, ""
 	p.height = height
+	// the lag is measured now, against the consensus height of this moment:
+	// comparing a 45s-old EVM height with the live head later reads as lag
+	// on any chain faster than ~1 block/s
+	p.lag = c.lastHeight - height
+	if p.lag < 0 {
+		p.lag = 0 // evm can briefly lead while the next consensus block finalizes
+	}
 	p.downSince = time.Time{}
 	c.mu.Unlock()
 
@@ -199,10 +206,7 @@ func (c *Chain) probeEVM(ctx context.Context, p *evmProbe) {
 	if serr == nil {
 		p.syncing = syncing
 	}
-	lag := c.lastHeight - p.height
-	if lag < 0 {
-		lag = 0 // evm can briefly lead while the next consensus block finalizes
-	}
+	lag := p.lag
 	var downSec float64
 	if p.down {
 		downSec = time.Since(p.downSince).Seconds()
@@ -420,10 +424,13 @@ var sysClient = &http.Client{Timeout: 6 * time.Second}
 func (c *Chain) markDown(n *nodeState, msg string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if !n.down {
-		n.down = true
+	// start the down clock on the first failure — including straight after
+	// catching up, which also counts as down but never set the clock (the
+	// node then stayed "down since never" and node-down could not fire)
+	if !n.down || n.syncing || n.downSince.IsZero() {
 		n.downSince = time.Now()
 	}
+	n.down = true
 	// unreachable means the sync state is unknown — hand paging to node-down
 	// and let the catching-up alert resolve rather than linger stale.
 	n.syncing = false
@@ -478,7 +485,9 @@ func (c *Chain) watchLoop(ctx context.Context) {
 			stallFor := time.Since(c.lastBlockTime)
 			stalled := !c.lastBlockTime.IsZero() && stallFor > time.Duration(a.StalledMinutes)*time.Minute
 			switch {
-			case stalled && !c.stallAlarm:
+			case stalled && !c.stallAlarm && !c.noNodes:
+				// with no working endpoint the chain can't be seen at all —
+				// no-nodes pages for that; "stalled" would be a guess
 				c.stallAlarm = true
 				c.alert(cfg.ChainID, nil, "stalled:"+cfg.ChainID, false, "critical",
 					fmt.Sprintf("stalled: no new block on %s for %d minutes", cfg.ChainID, a.StalledMinutes))
@@ -515,7 +524,7 @@ func (c *Chain) watchLoop(ctx context.Context) {
 			if n.syncing {
 				// catching-up: informative, after an optional grace period so
 				// brief sync blips don't page.
-				if a.CatchUp() && !syncAlerted[syncKey] && !c.eng.HasOpen(syncKey) &&
+				if a.CatchUp() && !syncAlerted[syncKey] && !c.eng.HasOpen(syncKey) && !n.syncSince.IsZero() &&
 					time.Since(n.syncSince) >= time.Duration(a.CatchingUpGraceMin)*time.Minute {
 					syncAlerted[syncKey] = true
 					c.alert(cfg.ChainID, nil, syncKey, false, a.CatchUpSeverity(),
@@ -579,10 +588,7 @@ func (c *Chain) watchLoop(ctx context.Context) {
 			if !nodeScope {
 				break
 			}
-			evmLag := c.lastHeight - p.height
-			if evmLag < 0 {
-				evmLag = 0
-			}
+			evmLag := p.lag
 			// evm endpoint down
 			key := "evm-down:" + p.url
 			switch {
@@ -603,7 +609,7 @@ func (c *Chain) watchLoop(ctx context.Context) {
 				a.EvmLagBlocks > 0 && evmLag > int64(a.EvmLagBlocks) && !p.lagAlarm:
 				p.lagAlarm = true
 				c.alert(cfg.ChainID, nil, key, false, "warning",
-					fmt.Sprintf("EVM execution on %s is %d blocks behind consensus on %s (evm %d, comet %d)", p.label(), evmLag, cfg.ChainID, p.height, c.lastHeight))
+					fmt.Sprintf("EVM execution on %s is %d blocks behind consensus on %s (evm %d, comet %d)", p.label(), evmLag, cfg.ChainID, p.height, p.height+evmLag))
 			case (!a.EvmLagEnabled || evmLag <= int64(a.EvmLagBlocks)) && (p.lagAlarm || c.eng.HasOpen(key)):
 				p.lagAlarm = false
 				c.alert(cfg.ChainID, nil, key, true, "info",
@@ -698,10 +704,19 @@ func (c *Chain) alert(chainID string, tg *Target, key string, resolved bool, sev
 		Resolved: resolved,
 		Time:     time.Now(),
 	}
-	if tg != nil && tg.info != nil {
-		a.Moniker = tg.info.Moniker
-		a.Valcons = tg.info.Valcons
-		a.Scoped = tg.vc.Alerts
+	a.Kind, a.Target, _ = strings.Cut(key, ":")
+	if tg != nil {
+		a.Labels = tg.vc.Labels
+		if tg.info != nil {
+			a.Moniker = tg.info.Moniker
+			a.Valcons = tg.info.Valcons
+			a.Scoped = tg.vc.Alerts
+		}
+	}
+	if m := c.nodeMeta.Load(); m != nil {
+		if nm, ok := (*m)[a.Target]; ok {
+			a.Node, a.Labels = nm.name, nm.labels
+		}
 	}
 	if resolved {
 		if c.eng.HasOpen(key) {

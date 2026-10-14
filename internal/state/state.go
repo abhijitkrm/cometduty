@@ -20,6 +20,7 @@ import (
 type Snapshot struct {
 	Alarms    map[string]map[string]alert.StoredAlert `json:"alarms"`     // dest kind -> key -> sent alert
 	NodesDown map[string]map[string]time.Time         `json:"nodes_down"` // chain -> url -> since
+	Silences  []alert.Silence                         `json:"silences,omitempty"`
 }
 
 // Store reads/writes the state file.

@@ -3,7 +3,59 @@
 All notable changes to cometduty are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.3.0] — 2026-10-14
+
+### Changed
+
+- Telegram: one card per incident instead of a message per raise and
+  resolve. Alerts about one node share its card; resolves edit it and a
+  reply marks the recovery. Each card has a bold headline, a plain reason
+  and the raw messages (collapsed); loopback URLs are named by the node.
+
+### Fixed
+
+- The catching-up alert fired at once with "syncing for 2562047h" when the
+  node was found syncing while picking an endpoint.
+
+- `evm-lag` fired on fast chains with a healthy EVM: the alarm compared an
+  EVM height sampled every 45s with the live consensus head, so on a chain
+  making 4 blocks a second the "lag" passed 30 blocks seconds after each
+  probe. The lag is now measured when the EVM height is read. Found live.
+- `node-down` never fired for a node that went down straight after
+  catching up: the catching-up state counts as down but didn't start the
+  down clock, and the later failure saw "already down". Found live.
+- `signer-stalled` fired on archive and RPC nodes with a home mount — their
+  signer state stays at 0. A node that has never signed no longer stalls.
+- `stalled` is no longer raised while no RPC endpoint works — the chain
+  can't be seen then, and `no-nodes` already pages for it.
+- The default `--chains-dir` was `chains.d` relative to the working
+  directory; it is now `chains.d` beside the config file, and one the
+  process can't read is skipped with a warning instead of refusing to start
+  (running the image as a node's uid failed with `open chains.d: permission
+  denied`). An explicit `--chains-dir` is still strict. The sample
+  `deploy/docker-compose.yml` now mounts chains.d where it is read.
+
+### Added
+
+- **Webhook payload v1.** Without `template_body`, the webhook sends a
+  versioned JSON document: `status`, `key`, `kind`, `target`, `node`,
+  `labels`, `reminder` alongside the old fields (still present). Templates
+  can use `{{.Kind}}`, `{{.Target}}`, `{{.Node}}`, `{{.Labels.x}}`. See
+  `docs/WEBHOOK.md`.
+- **Signed webhooks.** `webhook.secret` adds `X-Cometduty-Timestamp` and
+  `X-Cometduty-Signature` (HMAC-SHA256 over `<timestamp>.<body>`).
+- **Silence API**, Alertmanager v2 compatible, on the prometheus listener
+  when `api_token` is set. Silenced raises are held and sent if still open
+  when the silence ends; conditions that clear meanwhile never page.
+  Silences persist in `--state`; `cometduty_silences_active` counts them.
+- `labels:` on nodes and validators — carried by their alerts into the
+  webhook and usable in silence matchers.
+
+### Changed
+
+- `deploy/sidecar` is generic: `compose.yml` runs one sidecar per validator
+  host on the host network (any node layout), `compose.chain.yml` the central
+  instance. The primium-specific overlay is gone.
 
 ### Fixed
 

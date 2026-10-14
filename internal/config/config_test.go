@@ -246,3 +246,31 @@ func TestLoadConfigMissing(t *testing.T) {
 		t.Errorf("error lacks example-config hint: %v", err)
 	}
 }
+
+// The default chains.d sits beside the config file; one this user can't
+// read is skipped, an explicit one is not.
+func TestDefaultChainsDir(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.yml")
+	if err := os.WriteFile(cfg, []byte("chains:\n  a:\n    chain_id: a-1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cd := filepath.Join(dir, "chains.d")
+	_ = os.Mkdir(cd, 0o700)
+	_ = os.WriteFile(filepath.Join(cd, "b.yml"), []byte("chain_id: b-1\n"), 0o600)
+	c, err := Load(cfg, "", "")
+	if err != nil || c.Chains["b"] == nil {
+		t.Fatalf("default chains.d not merged: %v %v", err, c)
+	}
+	if os.Getuid() == 0 {
+		t.Skip("root reads everything")
+	}
+	_ = os.Chmod(cd, 0o000)
+	defer os.Chmod(cd, 0o700)
+	if _, err := Load(cfg, "", ""); err != nil {
+		t.Fatalf("unreadable default chains.d is fatal: %v", err)
+	}
+	if _, err := Load(cfg, cd, ""); err == nil {
+		t.Fatal("unreadable explicit --chains-dir accepted")
+	}
+}

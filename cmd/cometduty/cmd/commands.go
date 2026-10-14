@@ -93,7 +93,7 @@ func testAlertCmd() *cobra.Command {
 			}
 			all := map[string]alert.Notifier{
 				"slack": notifiers.Slack{}, "discord": notifiers.Discord{},
-				"telegram": notifiers.Telegram{}, "pagerduty": notifiers.PagerDuty{},
+				"telegram": &notifiers.Telegram{}, "pagerduty": notifiers.PagerDuty{},
 				"webhook": notifiers.Webhook{}, "ntfy": notifiers.Ntfy{},
 				"opsgenie": notifiers.Opsgenie{},
 			}

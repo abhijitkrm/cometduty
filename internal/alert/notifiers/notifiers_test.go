@@ -6,7 +6,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -258,5 +262,166 @@ func TestNon2xxIsError(t *testing.T) {
 	err := (Webhook{}).Send(context.Background(), testAlert(), config.WebhookConfig{URL: srv.URL})
 	if err == nil || !strings.Contains(err.Error(), "418") {
 		t.Errorf("non-2xx not an error: %v", err)
+	}
+}
+
+func TestWebhookPayloadV1(t *testing.T) {
+	srv, cap := stub(t)
+	a := testAlert()
+	a.Kind, a.Target, a.Node = "consecutive", "ABCD", "val1"
+	a.Labels = map[string]string{"profile": "val1"}
+	if err := (Webhook{}).Send(context.Background(), a, config.WebhookConfig{URL: srv.URL}); err != nil {
+		t.Fatal(err)
+	}
+	var p Payload
+	if err := json.Unmarshal(cap.body, &p); err != nil {
+		t.Fatal(err)
+	}
+	if p.Version != "1" || p.Source != "cometduty" || p.Status != "firing" || p.Key != "missed:ABCD" ||
+		p.Kind != "consecutive" || p.Node != "val1" || p.Labels["profile"] != "val1" {
+		t.Errorf("payload: %+v", p)
+	}
+	if cap.header.Get(SignatureHeader) != "" {
+		t.Error("signed without a secret")
+	}
+}
+
+func TestWebhookSignature(t *testing.T) {
+	srv, cap := stub(t)
+	if err := (Webhook{}).Send(context.Background(), testAlert(), config.WebhookConfig{URL: srv.URL, Secret: "s3cret"}); err != nil {
+		t.Fatal(err)
+	}
+	ts, err := strconv.ParseInt(cap.header.Get(TimestampHeader), 10, 64)
+	if err != nil || time.Since(time.Unix(ts, 0)) > time.Minute {
+		t.Fatalf("timestamp header: %q", cap.header.Get(TimestampHeader))
+	}
+	if got, want := cap.header.Get(SignatureHeader), Sign("s3cret", ts, cap.body); got != want {
+		t.Errorf("signature %q, want %q", got, want)
+	}
+	if Sign("other", ts, cap.body) == cap.header.Get(SignatureHeader) {
+		t.Error("signature does not depend on the secret")
+	}
+}
+
+// The archive outage seen live: four conditions on one node, then the
+// chain instance's own view. One card per node, edited; a reply when it
+// recovers.
+func TestTelegramIncidentCards(t *testing.T) {
+	type call struct {
+		method string
+		body   map[string]any
+	}
+	var mu sync.Mutex
+	var calls []call
+	next := 100
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var b map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		mu.Lock()
+		defer mu.Unlock()
+		m := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+		calls = append(calls, call{m, b})
+		next++
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":` + strconv.Itoa(next) + `}}`))
+	}))
+	defer srv.Close()
+	old := tgAPI
+	tgAPI = func(token, method string) string { return srv.URL + "/bot" + token + "/" + method }
+	defer func() { tgAPI = old }()
+
+	path := filepath.Join(t.TempDir(), "cards.json")
+	tg := NewTelegram(path)
+	cfg := config.TelegramConfig{Enabled: true, APIKey: "tok", Channel: "-100", Mentions: []string{"@ops"}}
+	t0 := time.Now().Add(-10 * time.Minute)
+	send := func(a alert.Alert) {
+		t.Helper()
+		if err := tg.Send(context.Background(), &a, cfg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	node := func(key, kind, sev, msg string, resolved bool, at time.Duration) alert.Alert {
+		return alert.Alert{ChainID: "primium-6", Key: key, Kind: kind, Target: "http://127.0.0.1:26657", Node: "v6-arch",
+			Severity: sev, Message: msg, Resolved: resolved, Time: t0.Add(at)}
+	}
+	var wg sync.WaitGroup // raised in the same instant, sent concurrently
+	for _, a := range []alert.Alert{
+		node("node-down:http://127.0.0.1:26657", "node-down", "critical", "RPC node v6-arch down for > 3 minutes on primium-6: dial tcp 127.0.0.1:26657: connect: connection refused", false, 0),
+		node("evm-down:http://127.0.0.1:8545", "evm-down", "warning", "EVM RPC http://127.0.0.1:8545 down for > 3 minutes", false, 0),
+	} {
+		wg.Add(1)
+		go func(a alert.Alert) { defer wg.Done(); send(a) }(a)
+	}
+	wg.Wait()
+	send(node("catching-up:http://127.0.0.1:26657", "catching-up", "warning", "RPC node v6-arch is catching up", false, 3*time.Minute))
+	send(node("node-down:http://127.0.0.1:26657", "node-down", "info", "RPC node v6-arch reachable again", true, 3*time.Minute))
+	send(node("evm-down:http://127.0.0.1:8545", "evm-down", "info", "recovered", true, 3*time.Minute))
+	// a restart forgets nothing: the card is found again from the state file
+	tg = NewTelegram(path)
+	send(node("catching-up:http://127.0.0.1:26657", "catching-up", "info", "finished syncing", true, 4*time.Minute))
+	send(alert.Alert{ChainID: "primium-6", Key: "no-nodes:primium-6", Kind: "no-nodes", Severity: "critical", Message: "no usable endpoint", Time: t0})
+
+	var methods []string
+	for _, c := range calls {
+		methods = append(methods, c.method)
+	}
+	want := "sendMessage editMessageText editMessageText editMessageText editMessageText editMessageText sendMessage sendMessage"
+	if strings.Join(methods, " ") != want {
+		t.Fatalf("calls:\n%s\nwant\n%s", strings.Join(methods, " "), want)
+	}
+	first := calls[0].body["text"].(string)
+	if strings.Contains(first, "127.0.0.1") || !strings.Contains(first, "<blockquote expandable>") || !strings.Contains(first, "@ops") {
+		t.Fatalf("first card:\n%s", first)
+	}
+	// the second alert joined the card, which leads with the worse one
+	both := calls[1].body["text"].(string)
+	if !strings.HasPrefix(both, "<b>v6-arch is down</b>\ncritical · primium-6\n\nThe node stopped answering RPC") ||
+		!strings.Contains(both, "Also: the node's EVM JSON-RPC isn't answering.") || !strings.Contains(both, "v6-arch:8545 down") ||
+		strings.Contains(both, "127.0.0.1") {
+		t.Fatalf("joined card:\n%s", both)
+	}
+	if calls[2].body["message_id"] != calls[1].body["message_id"] {
+		t.Fatal("edited another message")
+	}
+	if last := calls[5].body["text"].(string); !strings.HasPrefix(last, "<b>v6-arch recovered</b>\nprimium-6 · all clear after 4m") || strings.Contains(last, "@ops") {
+		t.Fatalf("recovered card:\n%s", last)
+	}
+	if r := calls[6].body; r["reply_to_message_id"] != calls[0].body["message_id"] && r["reply_to_message_id"] == nil ||
+		!strings.Contains(r["text"].(string), "v6-arch recovered") {
+		t.Fatalf("recovery reply: %v", r)
+	}
+	if c := calls[7].body["text"].(string); !strings.HasPrefix(c, "<b>primium-6: no node reachable</b>") {
+		t.Fatalf("chain card:\n%s", c)
+	}
+	for _, c := range calls {
+		if s, _ := c.body["text"].(string); regexp.MustCompile(`[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]`).MatchString(s) {
+			t.Fatalf("emoji in %q", s)
+		}
+	}
+}
+
+func TestTelegramWorseConditionIsAnnounced(t *testing.T) {
+	var methods []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		methods = append(methods, r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:])
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":7}}`))
+	}))
+	defer srv.Close()
+	old := tgAPI
+	tgAPI = func(token, method string) string { return srv.URL + "/" + method }
+	defer func() { tgAPI = old }()
+	tg := NewTelegram("")
+	cfg := config.TelegramConfig{APIKey: "tok", Channel: "-100"}
+	for _, a := range []alert.Alert{
+		{ChainID: "c-1", Node: "val1", Key: "catching-up:x", Kind: "catching-up", Severity: "warning", Time: time.Now().Add(-10 * time.Minute)},
+		{ChainID: "c-1", Node: "val1", Key: "signer-regressed:x", Kind: "signer-regressed", Severity: "critical", Time: time.Now()},
+		{ChainID: "c-1", Node: "val1", Key: "catching-up:x", Kind: "catching-up", Severity: "warning", Reminder: true},
+	} {
+		if err := tg.Send(context.Background(), &a, cfg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// new card; worse condition: a reply (sound) + the edit; reminder: a reply
+	if got := strings.Join(methods, " "); got != "sendMessage sendMessage editMessageText sendMessage" {
+		t.Fatalf("calls %s", got)
 	}
 }

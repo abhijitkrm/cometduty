@@ -131,7 +131,9 @@ func (c *Chain) updateSigner(n *nodeState, h int64) {
 
 	// stalled signer: state file hasn't advanced while the chain has — the
 	// node isn't signing (bad key, crashed signer thread, wrong height).
-	if a.SignerStallMin > 0 && c.lastHeight > 0 && n.signerHeight < c.lastHeight &&
+	// a node whose state was never above 0 has never signed (an archive or
+	// RPC node next to its own home): nothing to stall
+	if a.SignerStallMin > 0 && c.lastHeight > 0 && n.signerMax > 0 && n.signerHeight < c.lastHeight &&
 		time.Since(n.signerAt) > time.Duration(a.SignerStallMin)*time.Minute {
 		key := "signer-stalled:" + n.cfg.URL
 		if !n.signerAlarm && !c.eng.HasOpen(key) {

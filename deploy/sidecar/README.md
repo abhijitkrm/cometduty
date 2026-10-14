@@ -23,18 +23,19 @@ filters the whole board per validator.
 
 - `sidecar.yml` — config template; every `${VAR}` is expanded by cometduty,
   so one file serves all sidecars
-- `chain.yml` — the central `role: chain` config
-- `compose.primium.yml` — overlay for a primium-1-style localnet
-- `.env.example` — required per-validator env vars
+- `compose.yml` — one sidecar per validator host (host network)
+- `chain.yml` + `compose.chain.yml` — the central `role: chain` instance
+- `.env.example` — the per-node settings
 
 ## Wiring
 
-Sidecars join the validators' docker network (`primium-local`, external) and
-reach the node by its container DNS name — no `network_mode` sharing needed,
-so each sidecar publishes its own metrics port (`:28700`+).
+The sidecar runs on the validator's host with `network_mode: host` and
+reaches the node on the ports it publishes there (`127.0.0.1:26657`, `:8545`,
+`:26660` by default; change `NODE_*` for other ports). That works the same
+for a node in a container, under systemd, or run by hand.
 
-The node home is mounted read-only at `/node-home` — set `VAL{N}_HOME` to the
-same host path the validator uses. That enables:
+The node home is mounted read-only at `/node-home` — set `NODE_HOME` to the
+host path of the node's home. That enables:
 
 - `cometduty_node_disk_free_bytes` + `disk-low` alert
 - `cometduty_node_signer_height` (last signed height from
@@ -42,17 +43,30 @@ same host path the validator uses. That enables:
   (unreadable) and `signer-regressed` (height went backwards —
   double-sign risk) alerts
 
-`docker-proxy` is a read-only socket proxy exposing **only** container
-listing and log streaming — the Phase 2 log watcher uses it. Leave it out if
-log alerts aren't wanted yet.
+Log alerts are optional: set `LOGS_ENABLED=yes` and `NODE_CONTAINER`, and
+start with `--profile logs`. That adds `docker-proxy`, a read-only socket
+proxy on loopback exposing **only** container listing and log streaming.
 
 ## Run
 
 ```sh
-cp .env.example .env   # fill VAL{N}_HOME + VAL{N}_OPER
-docker compose -f compose.primium.yml --env-file .env up -d
+cp .env.example .env   # fill in CHAIN_*, VALIDATOR, VALOPER, NODE_HOME
+docker compose --env-file .env up -d                  # + --profile logs
+docker compose -f compose.chain.yml --env-file .env up -d   # once per network
 ```
 
-Then point Prometheus at `:28700`–`:28704` on the host — with the bundled
-stack, swap the `cometduty` job in `deploy/grafana/stack/prometheus.yml` for
-the sidecar targets sketched in its comments.
+Then point Prometheus at each sidecar's `:28686` and the chain instance's
+`:28690`.
+
+## Connecting other tools
+
+Both are optional and work with any tool, not just cometcli:
+
+- **Webhook** (`WEBHOOK_*`) — each alert as a versioned JSON document,
+  HMAC-signed with `WEBHOOK_SECRET`; see [docs/WEBHOOK.md](../../docs/WEBHOOK.md).
+- **Silence API** (`API_TOKEN`) — Alertmanager v2 compatible, so amtool,
+  Grafana or a deploy script can mute alerts during planned maintenance.
+
+[cometcli](https://github.com/abhijitkrm/cometcli) can write these files for a
+network it manages (`cometcli network export --format cometduty`) — you don't
+need it to run cometduty.
