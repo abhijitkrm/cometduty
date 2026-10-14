@@ -7,6 +7,13 @@ All notable changes to cometduty are documented here. The format follows
 
 ### Fixed
 
+- `node-down` never fired for a node that went down straight after
+  catching up: the catching-up state counts as down but didn't start the
+  down clock, and the later failure saw "already down". Found live.
+- `signer-stalled` fired on archive and RPC nodes with a home mount — their
+  signer state stays at 0. A node that has never signed no longer stalls.
+- `stalled` is no longer raised while no RPC endpoint works — the chain
+  can't be seen then, and `no-nodes` already pages for it.
 - The default `--chains-dir` was `chains.d` relative to the working
   directory; it is now `chains.d` beside the config file, and one the
   process can't read is skipped with a warning instead of refusing to start

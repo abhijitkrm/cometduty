@@ -144,3 +144,35 @@ func TestAlertsCarryNodeNameAndLabels(t *testing.T) {
 		t.Fatalf("alert %+v", a)
 	}
 }
+
+// A node that was catching up and then stops answering must start the
+// node-down clock (it used to stay zero, so node-down never fired).
+func TestDownAfterCatchingUpStartsTheClock(t *testing.T) {
+	c, n, _, _ := newLocalChain(t, config.AlertConfig{})
+	n.down, n.syncing = true, true // as probeNode leaves a syncing node
+	c.markDown(n, "down: connection refused")
+	if n.downSince.IsZero() || n.syncing {
+		t.Fatalf("downSince %v syncing %v", n.downSince, n.syncing)
+	}
+	first := n.downSince
+	c.markDown(n, "down: connection refused")
+	if !n.downSince.Equal(first) {
+		t.Fatal("a second failure restarted the clock")
+	}
+}
+
+// An archive or RPC node's signer state stays at 0: it never signs, so it
+// can't stall.
+func TestNeverSignedNodeDoesNotStall(t *testing.T) {
+	c, n, _, home := newLocalChain(t, config.AlertConfig{SignerStallMin: 1})
+	writeSignerState(t, home, 0)
+	c.probeLocal(n)
+	c.mu.Lock()
+	n.signerAt = time.Now().Add(-10 * time.Minute)
+	c.lastHeight = 500
+	c.mu.Unlock()
+	c.updateSigner(n, 0)
+	if n.signerAlarm {
+		t.Fatal("signer-stalled on a node that never signed")
+	}
+}

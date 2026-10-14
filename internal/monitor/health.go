@@ -420,10 +420,13 @@ var sysClient = &http.Client{Timeout: 6 * time.Second}
 func (c *Chain) markDown(n *nodeState, msg string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if !n.down {
-		n.down = true
+	// start the down clock on the first failure — including straight after
+	// catching up, which also counts as down but never set the clock (the
+	// node then stayed "down since never" and node-down could not fire)
+	if !n.down || n.syncing || n.downSince.IsZero() {
 		n.downSince = time.Now()
 	}
+	n.down = true
 	// unreachable means the sync state is unknown — hand paging to node-down
 	// and let the catching-up alert resolve rather than linger stale.
 	n.syncing = false
@@ -478,7 +481,9 @@ func (c *Chain) watchLoop(ctx context.Context) {
 			stallFor := time.Since(c.lastBlockTime)
 			stalled := !c.lastBlockTime.IsZero() && stallFor > time.Duration(a.StalledMinutes)*time.Minute
 			switch {
-			case stalled && !c.stallAlarm:
+			case stalled && !c.stallAlarm && !c.noNodes:
+				// with no working endpoint the chain can't be seen at all —
+				// no-nodes pages for that; "stalled" would be a guess
 				c.stallAlarm = true
 				c.alert(cfg.ChainID, nil, "stalled:"+cfg.ChainID, false, "critical",
 					fmt.Sprintf("stalled: no new block on %s for %d minutes", cfg.ChainID, a.StalledMinutes))
