@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -64,8 +65,12 @@ func runMonitor(cmd *cobra.Command) error {
 	eng := alert.NewEngine(nil,
 		time.Duration(cfg.FlapMinutes)*time.Minute,
 		time.Duration(cfg.RemindMinutes)*time.Minute)
+	cards := "" // Telegram incident cards live beside the state file
+	if stateFile != "" {
+		cards = filepath.Join(filepath.Dir(stateFile), "telegram-cards.json")
+	}
 	for _, n := range []alert.Notifier{
-		notifiers.Slack{}, notifiers.Discord{}, notifiers.Telegram{},
+		notifiers.Slack{}, notifiers.Discord{}, notifiers.NewTelegram(cards),
 		notifiers.PagerDuty{}, notifiers.Webhook{}, notifiers.Ntfy{}, notifiers.Opsgenie{},
 	} {
 		eng.Register(n)

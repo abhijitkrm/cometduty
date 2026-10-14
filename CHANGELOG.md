@@ -5,7 +5,17 @@ All notable changes to cometduty are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Telegram: one card per incident instead of a message per raise and
+  resolve. Alerts about one node share its card; resolves edit it and a
+  reply marks the recovery. Each card has a bold headline, a plain reason
+  and the raw messages (collapsed); loopback URLs are named by the node.
+
 ### Fixed
+
+- The catching-up alert fired at once with "syncing for 2562047h" when the
+  node was found syncing while picking an endpoint.
 
 - `evm-lag` fired on fast chains with a healthy EVM: the alarm compared an
   EVM height sampled every 45s with the live consensus head, so on a chain

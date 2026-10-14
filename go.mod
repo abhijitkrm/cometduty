@@ -5,7 +5,6 @@ go 1.26.5
 require (
 	cosmossdk.io/api v1.1.0
 	filippo.io/age v1.3.2
-	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/prometheus/client_golang v1.24.1
 	github.com/spf13/cobra v1.10.2

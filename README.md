@@ -187,6 +187,13 @@ incidents auto-close — even across restarts, since open alerts persist in
 PagerDuty · Slack · Discord · Telegram · generic templated JSON **webhook**
 (Teams, Mattermost, Gotify, Home Assistant…) · **ntfy** · **Opsgenie**.
 
+Telegram gets one **card per incident**, edited as it changes: alerts about
+the same node share its card (a stopped node is down, its EVM RPC is down,
+then it catches up — one card), each with a plain-language reason and the
+raw messages collapsed beneath. Recovery edits the card and posts a short
+reply; a worse condition later, and reminders, are replies too. Card ids
+are kept beside `--state` (`telegram-cards.json`).
+
 The webhook's default body is a versioned JSON document (alert key, kind,
 target, node, your labels, firing/resolved), optionally HMAC-signed — any
 tool can act on it. An optional **silence API**, compatible with
