@@ -524,7 +524,7 @@ func (c *Chain) watchLoop(ctx context.Context) {
 			if n.syncing {
 				// catching-up: informative, after an optional grace period so
 				// brief sync blips don't page.
-				if a.CatchUp() && !syncAlerted[syncKey] && !c.eng.HasOpen(syncKey) &&
+				if a.CatchUp() && !syncAlerted[syncKey] && !c.eng.HasOpen(syncKey) && !n.syncSince.IsZero() &&
 					time.Since(n.syncSince) >= time.Duration(a.CatchingUpGraceMin)*time.Minute {
 					syncAlerted[syncKey] = true
 					c.alert(cfg.ChainID, nil, syncKey, false, a.CatchUpSeverity(),

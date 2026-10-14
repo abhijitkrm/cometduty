@@ -299,3 +299,22 @@ func TestWebhookSignature(t *testing.T) {
 		t.Error("signature does not depend on the secret")
 	}
 }
+
+func TestTelegramText(t *testing.T) {
+	a := &alert.Alert{ChainID: "primium-6", Kind: "node-down", Target: "http://127.0.0.1:26657", Node: "v6-arch", Severity: "critical",
+		Message: "v6-arch (http://127.0.0.1:26657) has been down for 3 minutes"}
+	want := "🔴 <b>CRITICAL · Node down</b>\n<b>v6-arch</b> · primium-6\n\nv6-arch has been down for 3 minutes\n@ops"
+	if got := telegramText(a, []string{"@ops"}); got != want {
+		t.Fatalf("got\n%s\nwant\n%s", got, want)
+	}
+	a = &alert.Alert{ChainID: "primium-6", Kind: "evm-down", Target: "http://127.0.0.1:8545", Labels: map[string]string{"profile": "v6-val2"},
+		Severity: "info", Resolved: true, Message: "EVM RPC http://127.0.0.1:8545 recovered on primium-6 <ok>"}
+	want = "✅ <b>RESOLVED · EVM RPC down</b>\n<b>v6-val2</b> · primium-6\n\nEVM RPC v6-val2:8545 recovered on primium-6 &lt;ok&gt;"
+	if got := telegramText(a, []string{"@ops"}); got != want {
+		t.Fatalf("got\n%s\nwant\n%s", got, want)
+	}
+	a = &alert.Alert{ChainID: "c-1", Kind: "no-nodes", Severity: "critical", Message: "no endpoint answers (tcp://localhost:26657)"}
+	if got := telegramText(a, nil); !strings.Contains(got, "No reachable nodes</b>\n<b>c-1</b>\n\nno endpoint answers (localhost:26657)") {
+		t.Fatalf("chain alert:\n%s", got)
+	}
+}

@@ -293,8 +293,13 @@ func (c *Chain) pickClient(ctx context.Context) error {
 		c.mu.Lock()
 		if err != nil {
 			n.down, n.lastMsg = true, err.Error()
-			if st != nil && st.SyncInfo.CatchingUp {
-				n.syncing = true
+			if st != nil && st.SyncInfo.CatchingUp && !n.syncing {
+				// a sync episode begins here too: start its clock, or
+				// "syncing for" is measured from the zero time
+				now := time.Now()
+				n.syncing, n.syncSince, n.syncLastChange = true, now, now
+				n.height = int64(st.SyncInfo.LatestBlockHeight)
+				n.syncStartHeight, n.syncLastHeight = n.height, n.height
 			}
 			c.mu.Unlock()
 			if firstErr == nil {
