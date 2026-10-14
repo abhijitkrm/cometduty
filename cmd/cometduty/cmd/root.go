@@ -35,7 +35,7 @@ func Root() *cobra.Command {
 	pf.StringVarP(&cfgFile, "config", "f", "config.yml", "configuration file or https:// URL (age-encrypted)")
 	pf.StringVar(&stateFile, "state", ".cometduty-state.json", "file for storing state between restarts")
 	pf.StringVar(&alertLog, "alert-log", ".cometduty-alerts.jsonl", "append-only JSONL alert delivery log (empty disables)")
-	pf.StringVar(&chainsDir, "chains-dir", "chains.d", "directory with per-chain config files (.yml/.yaml)")
+	pf.StringVar(&chainsDir, "chains-dir", "", "directory with per-chain config files (.yml/.yaml) (default: chains.d beside the config file)")
 	pf.StringVar(&password, "password", "", "config decryption password (or PASSWORD env var)")
 	pf.BoolVar(&jsonLogs, "log-json", false, "emit structured JSON logs")
 	pf.BoolVarP(&verbose, "verbose", "v", false, "debug logging")

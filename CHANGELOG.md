@@ -5,6 +5,15 @@ All notable changes to cometduty are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The default `--chains-dir` was `chains.d` relative to the working
+  directory; it is now `chains.d` beside the config file, and one the
+  process can't read is skipped with a warning instead of refusing to start
+  (running the image as a node's uid failed with `open chains.d: permission
+  denied`). An explicit `--chains-dir` is still strict. The sample
+  `deploy/docker-compose.yml` now mounts chains.d where it is read.
+
 ### Added
 
 - **Webhook payload v1.** Without `template_body`, the webhook sends a
