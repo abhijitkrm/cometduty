@@ -7,6 +7,10 @@ All notable changes to cometduty are documented here. The format follows
 
 ### Fixed
 
+- `evm-lag` fired on fast chains with a healthy EVM: the alarm compared an
+  EVM height sampled every 45s with the live consensus head, so on a chain
+  making 4 blocks a second the "lag" passed 30 blocks seconds after each
+  probe. The lag is now measured when the EVM height is read. Found live.
 - `node-down` never fired for a node that went down straight after
   catching up: the catching-up state counts as down but didn't start the
   down clock, and the later failure saw "already down". Found live.

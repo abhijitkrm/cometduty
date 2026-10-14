@@ -1,7 +1,10 @@
 package monitor
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -174,5 +177,36 @@ func TestNeverSignedNodeDoesNotStall(t *testing.T) {
 	c.updateSigner(n, 0)
 	if n.signerAlarm {
 		t.Fatal("signer-stalled on a node that never signed")
+	}
+}
+
+// EVM lag is what it was when the EVM height was read; the consensus head
+// moving on between probes (fast chains: several blocks a second) is not lag.
+func TestEvmLagMeasuredAtProbeTime(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		res := `"0x3e8"` // 1000
+		if req.Method == "eth_syncing" {
+			res = "false"
+		}
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":` + string(req.ID) + `,"result":` + res + `}`))
+	}))
+	defer srv.Close()
+	c, _, _, _ := newLocalChain(t, config.AlertConfig{})
+	p := &evmProbe{url: srv.URL}
+	c.mu.Lock()
+	c.lastHeight = 1003
+	c.mu.Unlock()
+	c.probeEVM(context.Background(), p)
+	c.mu.Lock()
+	c.lastHeight = 1200 // the chain moved on after the probe
+	lag := p.lag
+	c.mu.Unlock()
+	if lag != 3 {
+		t.Fatalf("lag %d, want 3", lag)
 	}
 }

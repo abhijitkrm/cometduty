@@ -189,6 +189,13 @@ func (c *Chain) probeEVM(ctx context.Context, p *evmProbe) {
 	}
 	p.down, p.syncing, p.lastMsg = false, false, ""
 	p.height = height
+	// the lag is measured now, against the consensus height of this moment:
+	// comparing a 45s-old EVM height with the live head later reads as lag
+	// on any chain faster than ~1 block/s
+	p.lag = c.lastHeight - height
+	if p.lag < 0 {
+		p.lag = 0 // evm can briefly lead while the next consensus block finalizes
+	}
 	p.downSince = time.Time{}
 	c.mu.Unlock()
 
@@ -199,10 +206,7 @@ func (c *Chain) probeEVM(ctx context.Context, p *evmProbe) {
 	if serr == nil {
 		p.syncing = syncing
 	}
-	lag := c.lastHeight - p.height
-	if lag < 0 {
-		lag = 0 // evm can briefly lead while the next consensus block finalizes
-	}
+	lag := p.lag
 	var downSec float64
 	if p.down {
 		downSec = time.Since(p.downSince).Seconds()
@@ -584,10 +588,7 @@ func (c *Chain) watchLoop(ctx context.Context) {
 			if !nodeScope {
 				break
 			}
-			evmLag := c.lastHeight - p.height
-			if evmLag < 0 {
-				evmLag = 0
-			}
+			evmLag := p.lag
 			// evm endpoint down
 			key := "evm-down:" + p.url
 			switch {
@@ -608,7 +609,7 @@ func (c *Chain) watchLoop(ctx context.Context) {
 				a.EvmLagBlocks > 0 && evmLag > int64(a.EvmLagBlocks) && !p.lagAlarm:
 				p.lagAlarm = true
 				c.alert(cfg.ChainID, nil, key, false, "warning",
-					fmt.Sprintf("EVM execution on %s is %d blocks behind consensus on %s (evm %d, comet %d)", p.label(), evmLag, cfg.ChainID, p.height, c.lastHeight))
+					fmt.Sprintf("EVM execution on %s is %d blocks behind consensus on %s (evm %d, comet %d)", p.label(), evmLag, cfg.ChainID, p.height, p.height+evmLag))
 			case (!a.EvmLagEnabled || evmLag <= int64(a.EvmLagBlocks)) && (p.lagAlarm || c.eng.HasOpen(key)):
 				p.lagAlarm = false
 				c.alert(cfg.ChainID, nil, key, true, "info",

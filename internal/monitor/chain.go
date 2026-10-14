@@ -112,6 +112,7 @@ type evmProbe struct {
 	downSince   time.Time
 	downAlarm   bool
 	height      int64
+	lag         int64 // consensus height minus height, measured when height was read
 	syncing     bool
 	lastMsg     string
 	pending     int64
