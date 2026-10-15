@@ -144,6 +144,9 @@ chains:
 
       # Local checks — need the node's home dir mounted read-only (node home:):
       disk_free_bytes_alert: 0          # home filesystem free < N bytes → warning
+      inode_free_pct_alert: 0           # home filesystem free inodes < N% → warning
+      disk_fill_hours_alert: 0          # at the last hour's rate, full within N hours → warning
+                                        # (disk-error and signer-corrupt need no setting)
       signer_stall_minutes: 0           # priv_validator_state unmoved > N min while
                                         # the chain advances → warning (bad key, wedged signer)
 
@@ -179,6 +182,11 @@ chains:
         #   # tail: 100                  # docker: lines scanned back on first connect
         #   # rules:                     # extra patterns over the built-in pack
         #   #   - {name: my-rule, pattern: "err substring", severity: warning, count: 5, window_minutes: 2, cooldown_minutes: 30}
+        # host:                          # read-only views of the node's host (sidecar), each optional:
+        #   mounts: /host/mounts         #   host /proc/1/mounts bound read-only → disk-readonly
+        #   home_path: /home/me/.evmd    #   the node home's path on the host
+        #   kernel_log: /host/log/kern.log  # host /var/log bound read-only (the dir, so rotation is seen)
+        #                                #   → log-kernel-io-error, -fs-error, -fs-readonly, -nvme
       - url: https://rpc2.example.com:443
         alert_if_down: no
         # insecure_tls: yes      # self-signed certs

@@ -69,6 +69,22 @@ func (s *FileSource) Stream(ctx context.Context, out chan<- string) error {
 			f = nil
 			continue
 		}
+		if cur, err := os.Stat(s.path); err == nil && !os.SameFile(st, cur) {
+			// renamed away and replaced (logrotate's default): read the
+			// new file from its start
+			f.Close()
+			f, off = nil, 0
+			if nf, err := os.Open(s.path); err == nil {
+				f = nf
+			} else {
+				continue
+			}
+			if st, err = f.Stat(); err != nil {
+				f.Close()
+				f = nil
+				continue
+			}
+		}
 		if st.Size() < off { // truncated/rotated — reopen from the top
 			off = 0
 		}

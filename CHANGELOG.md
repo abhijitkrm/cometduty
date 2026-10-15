@@ -3,6 +3,48 @@
 All notable changes to cometduty are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- Disk alerts beyond free space (local checks, node `home:` mount):
+  - `disk-error` (critical): the home filesystem fails to answer twice in a
+    row, or reading it returns an I/O error — a failed, detached or
+    unmounted disk.
+  - `disk-inodes`: free inodes under `inode_free_pct_alert`%.
+  - `disk-filling`: at the last hour's rate, full within
+    `disk_fill_hours_alert` hours.
+  - `signer-corrupt` (critical): `priv_validator_state.json` exists but
+    doesn't parse. It used to be skipped silently.
+- Built-in log rules `disk-io-error`, `read-only-fs` and `db-corruption`;
+  `disk-full` also matches `disk quota exceeded`.
+- Node `host:` block, optional read-only views of the node's host:
+  `mounts` (the host's mount table) raises `disk-readonly` when the node
+  home's filesystem is remounted read-only; `kernel_log` watches the host
+  kernel log for disk I/O, filesystem, read-only remount and NVMe errors
+  (`log-kernel-*`).
+
+### Changed
+
+- A monitor with a single endpoint raises `node-stalled` on that node
+  instead of `stalled` on the chain: from one endpoint a stuck node and a
+  halted chain look the same. Seen live: a chain-role instance beside a
+  node with a full disk paged "chain stalled" while the chain kept going.
+
+### Fixed
+
+- Docker log source loaded dockerd heavily: a 30 s client timeout cut
+  every followed stream, and each reconnect asked for `since=`, which on the
+  json-file driver reads the container's whole log from its start (GBs
+  without rotation). On busy hosts the scans piled up (300 readers, dockerd
+  at 100–200% CPU). The stream now has no body timeout, and reconnects read
+  back with `tail=` and drop the lines already seen.
+- After an RPC outage longer than `stalled_minutes`, a stall was paged as
+  soon as the endpoint answered, before the first new block. The stall clock
+  now restarts when an endpoint is back.
+- The file log source follows a log renamed away by logrotate instead of
+  watching the old file forever.
+
 ## [0.3.0] — 2026-10-14
 
 ### Changed

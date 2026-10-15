@@ -104,6 +104,17 @@ func Compile(rs []config.LogRule) ([]*Rule, error) {
 // DefaultRules is the built-in Cosmos-EVM / CometBFT pack. These patterns
 // are the known page-worthy signatures; operators add their own under
 // node logs.rules.
+// KernelRules match a host kernel log (node host.kernel_log): a disk that is
+// failing, detached, or whose filesystem went read-only.
+func KernelRules() []config.LogRule {
+	return []config.LogRule{
+		{Name: "kernel-io-error", Pattern: `I/O error|blk_update_request: .*error|critical medium error`, Severity: "critical"},
+		{Name: "kernel-fs-error", Pattern: `EXT4-fs error|XFS \S+: .*(corruption|Internal error|I/O error)|BTRFS (error|critical)`, Severity: "critical"},
+		{Name: "kernel-fs-readonly", Pattern: `Remounting filesystem read-only|remounted.*read-only|Filesystem has been shut down`, Severity: "critical"},
+		{Name: "kernel-nvme", Pattern: `nvme\d+: (I/O .*timeout|controller is down|Device not ready|resetting controller)`, Severity: "warning", Count: 3, WindowMin: 10},
+	}
+}
+
 func DefaultRules() []config.LogRule {
 	return []config.LogRule{
 		{Name: "consensus-failure", Pattern: `CONSENSUS FAILURE`, Severity: "critical"},
@@ -112,7 +123,10 @@ func DefaultRules() []config.LogRule {
 		{Name: "panic", Pattern: `\bpanic:|fatal error:`, Severity: "critical"},
 		{Name: "double-sign", Pattern: `double sign|conflicting votes|DuplicateVote`, Severity: "critical"},
 		{Name: "signer-error", Pattern: `failed to sign|SignBytes failed|remote signer.*(error|refused|timeout)`, Severity: "critical"},
-		{Name: "disk-full", Pattern: `no space left on device`, Severity: "critical"},
+		{Name: "disk-full", Pattern: `no space left on device|disk quota exceeded`, Severity: "critical"},
+		{Name: "disk-io-error", Pattern: `(?i)input/output error|\bI/O error\b`, Severity: "critical"},
+		{Name: "read-only-fs", Pattern: `(?i)read-only file system`, Severity: "critical"},
+		{Name: "db-corruption", Pattern: `(?i)\bcorrupt(ed|ion)?\b.*\b(db|database|leveldb|goleveldb|pebble|rocksdb|wal|sst|ldb|manifest|store|journal)\b|\b(db|database|leveldb|goleveldb|pebble|rocksdb|wal|sst|ldb|manifest|store|journal)\b.*\bcorrupt(ed|ion)?\b|checksum mismatch`, Severity: "critical"},
 		{Name: "fd-exhaustion", Pattern: `too many open files`, Severity: "warning"},
 		{Name: "peer-churn", Pattern: `Stopping peer for error`, Severity: "warning", Count: 10, WindowMin: 2},
 		{Name: "evm-error", Pattern: `module=evm.*level=error|evm.*panic`, Severity: "warning", Count: 10, WindowMin: 5},

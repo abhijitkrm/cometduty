@@ -149,6 +149,7 @@ probes.
 | `consecutive` | N missed blocks in a row | sig-relay down, key mismatch, host crash |
 | `window-pct` | missed > X% of the slashing window | creeping toward the jail threshold |
 | `stalled` | no new block for `stalled_minutes` | consensus halt, upgrade bug |
+| `node-stalled` | the same, seen from a monitor with only one endpoint — names that node, since a stuck node and a halted chain look alike from there | stuck node (full disk, wedged process), or a halt |
 | `node-down` | configured RPC unreachable `node_down_alert_minutes` | dead sentry, bad LB rule |
 | `lag` | endpoint falls `lag_blocks` behind head | catching up, partitioned peer |
 | `inactive` | validator jailed / tombstoned / unbonded | slashing event, unbonding |
@@ -167,10 +168,16 @@ probes.
 | `cpu-high` | node CPU > `cpu_pct_alert`% (needs node `metrics_url`) | load spike, runaway process, under-provisioned host |
 | `mem-high` | node RSS > `mem_bytes_alert` (needs node `metrics_url`) | leak, state growth, OOM runway |
 | `disk-low` | home filesystem free < `disk_free_bytes_alert` (needs node `home`) | state growth, logging spam, full disk |
+| `disk-inodes` | home filesystem free inodes < `inode_free_pct_alert`% (needs node `home`) | millions of small files; no files can be created |
+| `disk-filling` | at the last hour's rate, full within `disk_fill_hours_alert` hours (needs node `home`) | pruning off, log or snapshot runaway |
+| `disk-error` | home filesystem can't be read twice in a row, or an I/O error reading it (needs node `home`) | failed or detached disk, unmounted volume |
+| `disk-readonly` | the node home's filesystem is mounted read-only on the host (needs node `host.mounts`) | kernel remount after disk errors |
+| `log-kernel-*` | the host kernel log shows disk I/O, filesystem, read-only remount or NVMe errors (needs node `host.kernel_log`) | failing or detached disk |
 | `signer-state` | `priv_validator_state.json` unreadable (needs node `home`) | wiped/restored home — restart would sign from height 0 |
+| `signer-corrupt` | `priv_validator_state.json` exists but doesn't parse (needs node `home`) | disk corruption, a bad copy — **don't restart on it** |
 | `signer-stalled` | signer state unmoved > `signer_stall_minutes` while chain advances | wrong key, wedged signer |
 | `signer-regressed` | signer state height moved backwards | state copied/restored — **double-sign risk** if a twin signs |
-| `log-<rule>` | node log line matches a rule (needs node `logs`) | panic, consensus failure, apphash mismatch, upgrade halt… |
+| `log-<rule>` | node log line matches a rule (needs node `logs`) | panic, consensus failure, apphash mismatch, upgrade halt, disk full, disk I/O errors, read-only filesystem, database corruption… |
 
 A syncing node suppresses `node-down` — one problem, one page. A `role` field
 on the chain splits duties when several cometduty instances watch one network:

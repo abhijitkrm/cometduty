@@ -21,8 +21,26 @@ type DockerSource struct {
 	host      string // http://... base URL (dummy host ok for unix sockets)
 	container string
 	client    *http.Client
-	tail      int   // lines to read back at first connect
-	since     int64 // unix seconds — reconnects continue from the last line
+	tail      int       // lines to read back at first connect
+	last      time.Time // the newest line read — a reconnect skips up to it
+}
+
+// resumeTail is how far back a reconnect reads. Docker's since= would be
+// exact, but on the json-file driver it reads the log from its start: GBs
+// on a node without log rotation, on every reconnect. tail= seeks from the
+// end; lines up to the last one seen are dropped.
+const resumeTail = 500
+
+// streamClient bounds connecting and the response headers, never the body:
+// a followed log stream lasts as long as the container.
+func streamClient(dial func(ctx context.Context, network, addr string) (net.Conn, error)) *http.Client {
+	tr := &http.Transport{ResponseHeaderTimeout: 30 * time.Second}
+	if dial != nil {
+		tr.DialContext = dial
+	} else {
+		tr.DialContext = (&net.Dialer{Timeout: 10 * time.Second}).DialContext
+	}
+	return &http.Client{Transport: tr}
 }
 
 // NewDockerSource builds a docker log source. dockerHost accepts
@@ -36,23 +54,19 @@ func NewDockerSource(dockerHost, container string, tail int) (*DockerSource, err
 	switch {
 	case strings.HasPrefix(dockerHost, "tcp://"):
 		s.host = "http://" + strings.TrimPrefix(dockerHost, "tcp://")
-		s.client = &http.Client{Timeout: 30 * time.Second}
+		s.client = streamClient(nil)
 	case strings.HasPrefix(dockerHost, "http://") || strings.HasPrefix(dockerHost, "https://"):
 		s.host = dockerHost
-		s.client = &http.Client{Timeout: 30 * time.Second}
+		s.client = streamClient(nil)
 	default:
 		sock := strings.TrimPrefix(dockerHost, "unix://")
 		if sock == "" || sock == dockerHost {
 			sock = "/var/run/docker.sock"
 		}
 		s.host = "http://docker"
-		s.client = &http.Client{
-			Transport: &http.Transport{
-				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-					return (&net.Dialer{}).DialContext(ctx, "unix", sock)
-				},
-			},
-		}
+		s.client = streamClient(func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, "unix", sock)
+		})
 	}
 	return s, nil
 }
@@ -66,8 +80,8 @@ func (s *DockerSource) Stream(ctx context.Context, out chan<- string) error {
 	q := url.Values{
 		"follow": {"1"}, "stdout": {"1"}, "stderr": {"1"}, "timestamps": {"1"},
 	}
-	if s.since > 0 {
-		q.Set("since", fmt.Sprint(s.since))
+	if !s.last.IsZero() {
+		q.Set("tail", fmt.Sprint(resumeTail))
 	} else {
 		q.Set("tail", fmt.Sprint(s.tail))
 	}
@@ -116,7 +130,7 @@ func (s *DockerSource) demux(ctx context.Context, r io.Reader, out chan<- string
 				break
 			}
 			partial = buf[i+1:]
-			if !emit(ctx, out, s.note(string(buf[:i]))) {
+			if text, ok := s.note(string(buf[:i])); ok && !emit(ctx, out, text) {
 				return nil
 			}
 			buf = partial
@@ -130,22 +144,26 @@ func (s *DockerSource) scan(ctx context.Context, r io.Reader, out chan<- string)
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
 	for sc.Scan() {
-		if !emit(ctx, out, s.note(sc.Text())) {
+		if text, ok := s.note(sc.Text()); ok && !emit(ctx, out, text) {
 			return nil
 		}
 	}
 	return sc.Err()
 }
 
-// note strips the docker timestamp prefix into s.since and returns the text.
-func (s *DockerSource) note(line string) string {
+// note strips the docker timestamp prefix and returns the text; false for a
+// line already read before a reconnect.
+func (s *DockerSource) note(line string) (string, bool) {
 	if i := strings.IndexByte(line, ' '); i > 0 {
 		if t, err := time.Parse(time.RFC3339Nano, line[:i]); err == nil {
-			s.since = t.Unix()
-			return line[i+1:]
+			if !t.After(s.last) {
+				return "", false
+			}
+			s.last = t
+			return line[i+1:], true
 		}
 	}
-	return line
+	return line, true
 }
 
 // emit blocks on out unless ctx ends.
