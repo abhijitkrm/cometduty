@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -84,7 +85,9 @@ func TestDockerDemux(t *testing.T) {
 	body.Write(muxFrame(1, []byte(" continues\n2026-09-25T10:00:01Z second\n")))
 	body.Write(muxFrame(2, []byte("2026-09-25T10:00:02Z stderr line\n")))
 
+	var queries []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		queries = append(queries, r.URL.RawQuery)
 		w.Header().Set("Content-Type", "application/vnd.docker.multiplexed-stream")
 		w.Write(body.Bytes())
 	}))
@@ -114,8 +117,27 @@ func TestDockerDemux(t *testing.T) {
 			t.Fatalf("line %d: got %q want %q", i, got[i], want[i])
 		}
 	}
-	if src.since == 0 {
-		t.Fatal("since should track the last docker timestamp")
+	if !src.last.Equal(time.Date(2026, 9, 25, 10, 0, 2, 0, time.UTC)) {
+		t.Fatalf("last = %v, want the newest docker timestamp", src.last)
+	}
+
+	// a reconnect reads back with tail= (since= makes dockerd read a
+	// json-file log from its start) and drops the lines already seen
+	_ = src.Stream(ctx, out) // ends with the body (EOF)
+	if q := queries[len(queries)-1]; strings.Contains(q, "since=") || !strings.Contains(q, fmt.Sprintf("tail=%d", resumeTail)) {
+		t.Fatalf("reconnect query %q: want tail=%d and no since", q, resumeTail)
+	}
+	select {
+	case line := <-out:
+		if line != "partial continues" { // no timestamp of its own: can't be told apart
+			t.Fatalf("reconnect replayed %q", line)
+		}
+	default:
+	}
+	select {
+	case line := <-out:
+		t.Fatalf("reconnect replayed %q", line)
+	default:
 	}
 }
 
