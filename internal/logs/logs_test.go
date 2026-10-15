@@ -191,3 +191,60 @@ func TestDiskRules(t *testing.T) {
 		}
 	}
 }
+
+func TestKernelRules(t *testing.T) {
+	rules, err := Compile(KernelRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := map[string]*regexp.Regexp{}
+	for _, r := range rules {
+		re[r.Name] = r.Re
+	}
+	for name, l := range map[string]string{
+		"kernel-io-error":    `Oct 15 10:13:02 ip-1 kernel: blk_update_request: I/O error, dev nvme1n1, sector 2048 op 0x1:(WRITE)`,
+		"kernel-fs-error":    `kernel: EXT4-fs error (device nvme1n1p1): ext4_find_entry:1455: inode #2: comm evmd: reading directory lblock 0`,
+		"kernel-fs-readonly": `kernel: EXT4-fs (nvme1n1p1): Remounting filesystem read-only`,
+		"kernel-nvme":        `kernel: nvme nvme1: I/O 12 QID 3 timeout, aborting`,
+	} {
+		if !re[name].MatchString(l) {
+			t.Errorf("%s should match %q", name, l)
+		}
+	}
+	for _, l := range []string{`kernel: EXT4-fs (nvme1n1p1): mounted filesystem with ordered data mode`, `kernel: nvme nvme0: 2/0/0 default/read/poll queues`} {
+		for name, r := range re {
+			if r.MatchString(l) {
+				t.Errorf("%s matched an ordinary line %q", name, l)
+			}
+		}
+	}
+}
+
+// logrotate renames the file and creates a new one: the source follows.
+func TestFileSourceFollowsRename(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "kern.log")
+	if err := os.WriteFile(p, []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	src, _ := NewFileSource(p)
+	out := make(chan string, 8)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go src.Stream(ctx, out)
+	time.Sleep(1200 * time.Millisecond)
+	if err := os.Rename(p, p+".1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte("after rotation\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case line := <-out:
+		if line != "after rotation" {
+			t.Fatalf("got %q", line)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatal("the source didn't follow the rotated file")
+	}
+}

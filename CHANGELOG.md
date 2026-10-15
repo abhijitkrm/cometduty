@@ -18,6 +18,23 @@ All notable changes to cometduty are documented here. The format follows
     doesn't parse. It used to be skipped silently.
 - Built-in log rules `disk-io-error`, `read-only-fs` and `db-corruption`;
   `disk-full` also matches `disk quota exceeded`.
+- Node `host:` block, optional read-only views of the node's host:
+  `mounts` (the host's mount table) raises `disk-readonly` when the node
+  home's filesystem is remounted read-only; `kernel_log` watches the host
+  kernel log for disk I/O, filesystem, read-only remount and NVMe errors
+  (`log-kernel-*`).
+
+### Changed
+
+- A monitor with a single endpoint raises `node-stalled` on that node
+  instead of `stalled` on the chain: from one endpoint a stuck node and a
+  halted chain look the same. Seen live: a chain-role instance beside a
+  node with a full disk paged "chain stalled" while the chain kept going.
+
+### Fixed
+
+- The file log source follows a log renamed away by logrotate instead of
+  watching the old file forever.
 
 ## [0.3.0] — 2026-10-14
 

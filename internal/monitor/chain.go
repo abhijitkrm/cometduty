@@ -92,6 +92,7 @@ type nodeState struct {
 	diskErrAlarm  bool      // disk-error alert currently open
 	inodeAlarm    bool      // disk-inodes alert currently open
 	fillAlarm     bool      // disk-filling alert currently open
+	roAlarm       bool      // disk-readonly alert currently open
 	diskSamples   []diskSample
 }
 
@@ -156,6 +157,8 @@ type Chain struct {
 	lastBlockTime  time.Time
 	lastHeight     int64
 	stallAlarm     bool
+	stallKey       string // the open stall alert's key: the chain's, or its only node's
+	stallMsg       string
 	noNodes        bool
 	noNodesAlarm   bool
 	noNodesSince   time.Time

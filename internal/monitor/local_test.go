@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -319,4 +320,65 @@ func TestSignerCorruptAfterTwoReads(t *testing.T) {
 		t.Fatal("signer-corrupt should clear once the file parses")
 	}
 	waitActive(t, eng, "test", 0)
+}
+
+func TestMountOf(t *testing.T) {
+	table := "/dev/root / ext4 rw,relatime,discard 0 0\n" +
+		"/dev/nvme1n1 /data xfs ro,relatime 0 0\n" +
+		"/dev/nvme2n1 /data/my\\040node ext4 rw 0 0\n" +
+		"tmpfs /run tmpfs rw,nosuid 0 0\n"
+	for path, want := range map[string]struct {
+		mnt string
+		ro  bool
+	}{
+		"/home/ubuntu/.node":  {"/", false},
+		"/data/evmd":          {"/data", true},
+		"/data":               {"/data", true},
+		"/data/my node/x":     {"/data/my node", false},
+		"/database/elsewhere": {"/", false},
+	} {
+		mnt, ro := mountOf(table, path)
+		if mnt != want.mnt || ro != want.ro {
+			t.Errorf("mountOf(%s) = %s %v, want %s %v", path, mnt, ro, want.mnt, want.ro)
+		}
+	}
+	// a remount on the same point shadows the earlier entry
+	if _, ro := mountOf("/dev/a /data ext4 rw 0 0\n/dev/a /data ext4 ro 0 0\n", "/data/x"); !ro {
+		t.Error("the later mount on /data should win")
+	}
+}
+
+func TestDiskReadonlyAlert(t *testing.T) {
+	c, n, eng, home := newLocalChain(t, config.AlertConfig{})
+	writeSignerState(t, home, 10)
+	mounts := filepath.Join(t.TempDir(), "mounts")
+	write := func(opts string) {
+		if err := os.WriteFile(mounts, []byte("/dev/root / ext4 "+opts+" 0 0\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n.cfg.Host = &config.HostConfig{Mounts: mounts, HomePath: "/home/ubuntu/node"}
+	write("ro,relatime")
+	c.probeLocal(n)
+	if !n.roAlarm {
+		t.Fatal("expected disk-readonly")
+	}
+	waitActive(t, eng, "test", 1)
+	write("rw,relatime")
+	c.probeLocal(n)
+	if n.roAlarm {
+		t.Fatal("disk-readonly should clear once read-write")
+	}
+	waitActive(t, eng, "test", 0)
+}
+
+func TestStallScope(t *testing.T) {
+	c, _, _, _ := newLocalChain(t, config.AlertConfig{})
+	if key, msg := c.stallScope("test-1", 2); key != "node-stalled:http://n:26657" || !strings.Contains(msg, "only endpoint") {
+		t.Fatalf("one endpoint: %s %s", key, msg)
+	}
+	c.nodes = append(c.nodes, &nodeState{cfg: &config.NodeConfig{URL: "http://m:26657"}})
+	if key, _ := c.stallScope("test-1", 2); key != "stalled:test-1" {
+		t.Fatalf("two endpoints: %s", key)
+	}
 }

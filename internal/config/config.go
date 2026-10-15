@@ -257,11 +257,22 @@ type NodeConfig struct {
 	EvmRPC      string            `yaml:"evm_rpc"`     // optional: this node's own EVM JSON-RPC (per-validator execution checks)
 	HomeDir     string            `yaml:"home"`        // optional: read-only mount of the node's home dir — enables local checks (signer state, disk)
 	Logs        *LogConfig        `yaml:"logs"`        // optional: tail container/file logs for known-bad patterns
+	Host        *HostConfig       `yaml:"host"`        // optional: read-only views of the node's host (mount table, kernel log)
 	AlertIfDown bool              `yaml:"alert_if_down"`
 	InsecureTLS bool              `yaml:"insecure_tls"` // allow self-signed certs
 	Headers     map[string]string `yaml:"headers"`      // extra HTTP headers, e.g. Authorization
 	DisableVote bool              `yaml:"disable_vote"` // don't use this node for vote subscriptions
 	Labels      map[string]string `yaml:"labels"`       // travel with this node's alerts (webhook labels, silence matchers)
+}
+
+// HostConfig gives a sidecar read-only views of its host that a container
+// doesn't have: the host's mount table (is the node home's filesystem
+// read-only?) and the kernel log (disk I/O and filesystem errors). Each is
+// optional; mount them read-only.
+type HostConfig struct {
+	Mounts    string `yaml:"mounts"`     // the host's mount table, e.g. host /proc/1/mounts bound at /host/mounts
+	HomePath  string `yaml:"home_path"`  // the node home's path on the host (to find its mount in the table)
+	KernelLog string `yaml:"kernel_log"` // the host's kernel log file, e.g. /var/log bound at /host/log → /host/log/kern.log
 }
 
 // LogConfig turns on pattern-based log alerting for a node. cometduty watches

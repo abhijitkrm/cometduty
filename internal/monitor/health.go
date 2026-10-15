@@ -484,19 +484,20 @@ func (c *Chain) watchLoop(ctx context.Context) {
 		if a.StalledEnabled && chainScope {
 			stallFor := time.Since(c.lastBlockTime)
 			stalled := !c.lastBlockTime.IsZero() && stallFor > time.Duration(a.StalledMinutes)*time.Minute
+			if !c.stallAlarm {
+				c.stallKey, c.stallMsg = c.stallScope(cfg.ChainID, a.StalledMinutes)
+			}
 			switch {
 			case stalled && !c.stallAlarm && !c.noNodes:
 				// with no working endpoint the chain can't be seen at all —
 				// no-nodes pages for that; "stalled" would be a guess
 				c.stallAlarm = true
-				c.alert(cfg.ChainID, nil, "stalled:"+cfg.ChainID, false, "critical",
-					fmt.Sprintf("stalled: no new block on %s for %d minutes", cfg.ChainID, a.StalledMinutes))
-			case !stalled && (c.stallAlarm || c.eng.HasOpen("stalled:"+cfg.ChainID)) && !c.lastBlockTime.IsZero():
+				c.alert(cfg.ChainID, nil, c.stallKey, false, "critical", c.stallMsg)
+			case !stalled && (c.stallAlarm || c.eng.HasOpen(c.stallKey)) && !c.lastBlockTime.IsZero():
 				// blocks are flowing again — resolve. (v2 checked IsZero() here,
 				// which can never be true once monitoring starts.)
 				c.stallAlarm = false
-				c.alert(cfg.ChainID, nil, "stalled:"+cfg.ChainID, true, "info",
-					fmt.Sprintf("stalled: no new block on %s for %d minutes", cfg.ChainID, a.StalledMinutes))
+				c.alert(cfg.ChainID, nil, c.stallKey, true, "info", c.stallMsg)
 			}
 		}
 
@@ -745,4 +746,17 @@ func (c *Chain) ready() (bool, string) {
 		return false, fmt.Sprintf("no block for %s", age.Round(time.Second))
 	}
 	return true, ""
+}
+
+// stallScope is what a stall can be blamed on. With two or more endpoints a
+// stall is the chain's. With one, it can't be told apart from that node
+// being stuck while the chain moves on — so the alert names the node (its
+// card, its silences) and says so. Called under c.mu.
+func (c *Chain) stallScope(chainID string, minutes int) (string, string) {
+	if len(c.nodes) == 1 {
+		n := c.nodes[0]
+		return "node-stalled:" + n.cfg.URL, fmt.Sprintf("node-stalled: no new block from %s for %d minutes on %s — it is this monitor's only endpoint, so the node may be stuck while the chain moves on; add a second endpoint to tell them apart",
+			nodeLabel(n), minutes, chainID)
+	}
+	return "stalled:" + chainID, fmt.Sprintf("stalled: no new block on %s for %d minutes", chainID, minutes)
 }

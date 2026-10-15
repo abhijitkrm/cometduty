@@ -208,6 +208,7 @@ func (c *Chain) probeDisk(n *nodeState, home string) {
 	}
 
 	c.probeFillRate(n, free)
+	c.probeReadonly(n)
 
 	if n.diskErrAlarm || c.eng.HasOpen(errKey) {
 		n.diskErrAlarm = false
@@ -326,4 +327,59 @@ func (c *Chain) probeSignerFile(n *nodeState, home string) {
 		c.alert(chainID, nil, key, true, "info",
 			fmt.Sprintf("node %s priv_validator_state.json readable again on %s", nodeLabel(n), chainID))
 	}
+}
+
+// probeReadonly reads the host's mount table (node host.mounts) for the
+// filesystem holding the node home: the kernel remounts a filesystem
+// read-only after disk errors, and the node can't write from then on. The
+// home mount cometduty itself sees is always read-only, so only the host's
+// table tells.
+func (c *Chain) probeReadonly(n *nodeState) {
+	hc := n.cfg.Host
+	if hc == nil || hc.Mounts == "" || hc.HomePath == "" {
+		return
+	}
+	raw, err := os.ReadFile(hc.Mounts)
+	if err != nil {
+		return
+	}
+	mnt, ro := mountOf(string(raw), hc.HomePath)
+	if mnt == "" {
+		return
+	}
+	chainID := c.cfg.ChainID
+	key := "disk-readonly:" + n.cfg.URL
+	switch {
+	case ro && !n.roAlarm && !c.eng.HasOpen(key):
+		n.roAlarm = true
+		c.alert(chainID, nil, key, false, "critical",
+			fmt.Sprintf("node %s home filesystem %s is mounted read-only on its host on %s — usually remounted after disk errors; the node can't write",
+				nodeLabel(n), mnt, chainID))
+	case !ro && (n.roAlarm || c.eng.HasOpen(key)):
+		n.roAlarm = false
+		c.alert(chainID, nil, key, true, "info",
+			fmt.Sprintf("node %s home filesystem %s is read-write again on %s", nodeLabel(n), mnt, chainID))
+	}
+}
+
+// mountOf finds the mount holding path in a /proc/<pid>/mounts table (the
+// longest mount point that contains it) and whether it is read-only.
+func mountOf(table, path string) (string, bool) {
+	best, ro := "", false
+	for _, line := range strings.Split(table, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 4 {
+			continue
+		}
+		mp := strings.ReplaceAll(f[1], "\\040", " ")
+		if !(path == mp || mp == "/" || strings.HasPrefix(path, strings.TrimSuffix(mp, "/")+"/")) || len(mp) < len(best) {
+			continue
+		}
+		// a later mount on the same point shadows an earlier one
+		best, ro = mp, false
+		for _, o := range strings.Split(f[3], ",") {
+			ro = ro || o == "ro"
+		}
+	}
+	return best, ro
 }

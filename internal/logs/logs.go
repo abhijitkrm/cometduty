@@ -104,6 +104,17 @@ func Compile(rs []config.LogRule) ([]*Rule, error) {
 // DefaultRules is the built-in Cosmos-EVM / CometBFT pack. These patterns
 // are the known page-worthy signatures; operators add their own under
 // node logs.rules.
+// KernelRules match a host kernel log (node host.kernel_log): a disk that is
+// failing, detached, or whose filesystem went read-only.
+func KernelRules() []config.LogRule {
+	return []config.LogRule{
+		{Name: "kernel-io-error", Pattern: `I/O error|blk_update_request: .*error|critical medium error`, Severity: "critical"},
+		{Name: "kernel-fs-error", Pattern: `EXT4-fs error|XFS \S+: .*(corruption|Internal error|I/O error)|BTRFS (error|critical)`, Severity: "critical"},
+		{Name: "kernel-fs-readonly", Pattern: `Remounting filesystem read-only|remounted.*read-only|Filesystem has been shut down`, Severity: "critical"},
+		{Name: "kernel-nvme", Pattern: `nvme\d+: (I/O .*timeout|controller is down|Device not ready|resetting controller)`, Severity: "warning", Count: 3, WindowMin: 10},
+	}
+}
+
 func DefaultRules() []config.LogRule {
 	return []config.LogRule{
 		{Name: "consensus-failure", Pattern: `CONSENSUS FAILURE`, Severity: "critical"},

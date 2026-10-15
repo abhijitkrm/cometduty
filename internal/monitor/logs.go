@@ -18,12 +18,19 @@ func (c *Chain) logsLoop(ctx context.Context) {
 	c.mu.Lock()
 	chainRole := c.cfg.IsChainOnly()
 	type work struct {
-		n     *nodeState
-		src   logs.Source
-		rules []*logs.Rule
+		n      *nodeState
+		src    logs.Source
+		rules  []*logs.Rule
+		kernel bool
 	}
 	var ws []work
 	for _, n := range c.nodes {
+		if hc := n.cfg.Host; !chainRole && hc != nil && hc.KernelLog != "" {
+			rules, _ := logs.Compile(logs.KernelRules())
+			if src, err := logs.NewFileSource(hc.KernelLog); err == nil {
+				ws = append(ws, work{n, src, rules, true})
+			}
+		}
 		lc := n.cfg.Logs
 		if chainRole || lc == nil || !lc.Enabled {
 			continue
@@ -38,7 +45,7 @@ func (c *Chain) logsLoop(ctx context.Context) {
 			c.log.Warn("log source unusable", "node", nodeLabel(n), "err", err)
 			continue
 		}
-		ws = append(ws, work{n, src, rules})
+		ws = append(ws, work{n, src, rules, false})
 	}
 	c.mu.Unlock()
 
@@ -47,7 +54,7 @@ func (c *Chain) logsLoop(ctx context.Context) {
 		wg.Add(1)
 		go func(w work) {
 			defer wg.Done()
-			c.watchLogs(ctx, w.n, w.src, w.rules)
+			c.watchLogs(ctx, w.n, w.src, w.rules, w.kernel)
 		}(w)
 	}
 	wg.Wait()
@@ -55,7 +62,7 @@ func (c *Chain) logsLoop(ctx context.Context) {
 
 // watchLogs streams a node's log forever, evaluating rules per line and
 // reconnecting after stream failures with a fixed backoff.
-func (c *Chain) watchLogs(ctx context.Context, n *nodeState, src logs.Source, rules []*logs.Rule) {
+func (c *Chain) watchLogs(ctx context.Context, n *nodeState, src logs.Source, rules []*logs.Rule, kernel bool) {
 	c.log.Info("log watcher started", "node", nodeLabel(n), "source", src.String(), "rules", len(rules))
 	for ctx.Err() == nil {
 		out := make(chan string, 512)
@@ -64,7 +71,7 @@ func (c *Chain) watchLogs(ctx context.Context, n *nodeState, src logs.Source, ru
 			close(out)
 		}()
 		for line := range out {
-			c.evalLogLine(n, rules, line)
+			c.evalLogLine(n, rules, line, kernel)
 		}
 		// stream ended — brief backoff then reconnect (sources resume from
 		// their position, so reconnects don't replay history)
@@ -92,7 +99,7 @@ var consoleLevel = map[string]string{
 // auto-resolves after its cooldown (log alerts are notify-once events, not
 // latched conditions). ANSI escapes are stripped first — colored console
 // logs wrap tokens (`module=<ESC>[0mevm`) and break pattern matching.
-func (c *Chain) evalLogLine(n *nodeState, rules []*logs.Rule, line string) {
+func (c *Chain) evalLogLine(n *nodeState, rules []*logs.Rule, line string, kernel bool) {
 	now := time.Now()
 	chainID := c.cfg.ChainID
 	line = ansiRe.ReplaceAllString(line, "")
@@ -108,7 +115,7 @@ func (c *Chain) evalLogLine(n *nodeState, rules []*logs.Rule, line string) {
 			level = consoleLevel[m[1]]
 		}
 	}
-	if c.met != nil {
+	if c.met != nil && !kernel { // node log volume, not the host's
 		c.met.LogLine(c.name, chainID, n.cfg.URL, n.cfg.Validator, level)
 	}
 	for _, r := range rules {
@@ -116,8 +123,12 @@ func (c *Chain) evalLogLine(n *nodeState, rules []*logs.Rule, line string) {
 			continue
 		}
 		key := "log-" + r.Name + ":" + n.cfg.URL
+		what := "log"
+		if kernel {
+			what = "host kernel log"
+		}
 		c.alert(chainID, nil, key, false, r.Severity,
-			fmt.Sprintf("node %s log pattern %q fired on %s — %s", nodeLabel(n), r.Name, chainID, logSample(line)))
+			fmt.Sprintf("node %s %s pattern %q fired on %s — %s", nodeLabel(n), what, r.Name, chainID, logSample(line)))
 		if c.met != nil {
 			c.met.LogMatch(c.name, chainID, n.cfg.URL, n.cfg.Validator, r.Name, r.Severity)
 		}
