@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"testing"
 	"time"
 
@@ -209,4 +210,113 @@ func TestEvmLagMeasuredAtProbeTime(t *testing.T) {
 	if lag != 3 {
 		t.Fatalf("lag %d, want 3", lag)
 	}
+}
+
+// fakeStatfs swaps the filesystem reader for one test.
+func fakeStatfs(t *testing.T, f func(string) (fsStat, error)) {
+	t.Helper()
+	old := statfs
+	statfs = f
+	t.Cleanup(func() { statfs = old })
+}
+
+func TestDiskErrorAfterTwoFailures(t *testing.T) {
+	c, n, eng, home := newLocalChain(t, config.AlertConfig{})
+	writeSignerState(t, home, 10)
+	fail := true
+	fakeStatfs(t, func(string) (fsStat, error) {
+		if fail {
+			return fsStat{}, syscall.EIO
+		}
+		return fsStat{free: 100 << 30}, nil
+	})
+	c.probeLocal(n)
+	if n.diskErrAlarm {
+		t.Fatal("one failure is not a failed disk")
+	}
+	c.probeLocal(n)
+	if !n.diskErrAlarm {
+		t.Fatal("expected disk-error after two failures")
+	}
+	waitActive(t, eng, "test", 1)
+	fail = false
+	c.probeLocal(n)
+	if n.diskErrAlarm {
+		t.Fatal("disk-error should clear once the filesystem answers")
+	}
+	waitActive(t, eng, "test", 0)
+}
+
+func TestInodesLow(t *testing.T) {
+	c, n, eng, home := newLocalChain(t, config.AlertConfig{InodeFreePctAlert: 5})
+	writeSignerState(t, home, 10)
+	ffree := 2.0
+	fakeStatfs(t, func(string) (fsStat, error) { return fsStat{free: 100 << 30, files: 100, ffree: ffree}, nil })
+	c.probeLocal(n)
+	if !n.inodeAlarm {
+		t.Fatal("expected disk-inodes at 2% free")
+	}
+	waitActive(t, eng, "test", 1)
+	ffree = 50
+	c.probeLocal(n)
+	if n.inodeAlarm {
+		t.Fatal("disk-inodes should clear at 50% free")
+	}
+}
+
+func TestDiskFillingRate(t *testing.T) {
+	c, n, eng, home := newLocalChain(t, config.AlertConfig{DiskFillHoursAlert: 12})
+	writeSignerState(t, home, 10)
+	free := float64(10 << 30)
+	fakeStatfs(t, func(string) (fsStat, error) { return fsStat{free: free}, nil })
+	// 30 minutes ago there was 12 GiB free: 4 GiB/h, full in 2.5h
+	n.diskSamples = []diskSample{{at: time.Now().Add(-30 * time.Minute), free: 12 << 30}}
+	c.probeLocal(n)
+	if !n.fillAlarm {
+		t.Fatal("expected disk-filling at 4 GiB/h with 10 GiB left")
+	}
+	waitActive(t, eng, "test", 1)
+	// space freed: the rate turns negative
+	free = 40 << 30
+	c.probeLocal(n)
+	if n.fillAlarm {
+		t.Fatal("disk-filling should clear once the disk stops filling")
+	}
+}
+
+func TestDiskFillingNeedsSpan(t *testing.T) {
+	c, n, _, home := newLocalChain(t, config.AlertConfig{DiskFillHoursAlert: 12})
+	writeSignerState(t, home, 10)
+	fakeStatfs(t, func(string) (fsStat, error) { return fsStat{free: 1 << 30}, nil })
+	// a 5-minute burst of writes isn't a trend
+	n.diskSamples = []diskSample{{at: time.Now().Add(-5 * time.Minute), free: 5 << 30}}
+	c.probeLocal(n)
+	if n.fillAlarm {
+		t.Fatal("a rate over 5 minutes must not alert")
+	}
+}
+
+func TestSignerCorruptAfterTwoReads(t *testing.T) {
+	c, n, eng, home := newLocalChain(t, config.AlertConfig{})
+	writeSignerState(t, home, 10)
+	c.probeLocal(n)
+	f := filepath.Join(home, "data", "priv_validator_state.json")
+	if err := os.WriteFile(f, []byte("{\"height\":\"1\x00\x00"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c.probeLocal(n)
+	if n.corruptAlarm {
+		t.Fatal("one bad read may be torn; not corrupt yet")
+	}
+	c.probeLocal(n)
+	if !n.corruptAlarm {
+		t.Fatal("expected signer-corrupt after two bad reads")
+	}
+	waitActive(t, eng, "test", 1)
+	writeSignerState(t, home, 11)
+	c.probeLocal(n)
+	if n.corruptAlarm {
+		t.Fatal("signer-corrupt should clear once the file parses")
+	}
+	waitActive(t, eng, "test", 0)
 }

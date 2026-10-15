@@ -232,6 +232,8 @@ type AlertConfig struct {
 
 	// Local checks — need the node's home dir mounted read-only (node home:).
 	DiskFreeBytesAlert int64 `yaml:"disk_free_bytes_alert"` // home filesystem free < N bytes → warning; 0 = off
+	InodeFreePctAlert  int   `yaml:"inode_free_pct_alert"`  // home filesystem free inodes < N% → warning; 0 = off
+	DiskFillHoursAlert int   `yaml:"disk_fill_hours_alert"` // at the last hour's rate, full within N hours → warning; 0 = off
 	SignerStallMin     int   `yaml:"signer_stall_minutes"`  // priv_validator_state height unmoved > N min while chain advances → warning; 0 = off
 
 	// Per-chain/per-validator destination overrides. The Enabled flag can

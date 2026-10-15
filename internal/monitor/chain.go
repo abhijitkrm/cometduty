@@ -86,6 +86,13 @@ type nodeState struct {
 	signerAlarm   bool      // signer-stalled alert currently open
 	regressAlarm  bool      // signer-regressed alert currently open
 	signFileAlarm bool      // signer-state unreadable alert currently open
+	corruptAlarm  bool      // signer-corrupt alert currently open
+	signBad       int       // priv_validator_state.json reads in a row that didn't parse
+	diskErrs      int       // statfs failures in a row
+	diskErrAlarm  bool      // disk-error alert currently open
+	inodeAlarm    bool      // disk-inodes alert currently open
+	fillAlarm     bool      // disk-filling alert currently open
+	diskSamples   []diskSample
 }
 
 // Target is one validator being watched on a chain.

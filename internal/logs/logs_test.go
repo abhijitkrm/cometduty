@@ -154,3 +154,40 @@ func TestFileSourceTail(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 	}
 }
+
+// The disk rules match what cometbft, the SDK and their databases log when a
+// disk fills, fails or corrupts — and stay quiet on everyday lines.
+func TestDiskRules(t *testing.T) {
+	rules, err := Compile(DefaultRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := map[string]*regexp.Regexp{}
+	for _, r := range rules {
+		re[r.Name] = r.Re
+	}
+	hit := map[string][]string{
+		"disk-full":     {`failed to write WAL: write /root/.evmd/data/cs.wal/wal: no space left on device`},
+		"disk-io-error": {`E[2026-10-15] error on pebble: read /home/data/application.db/000123.sst: input/output error`, `blk_update_request: I/O error, dev nvme1n1, sector 2048`},
+		"read-only-fs":  {`open /home/data/priv_validator_state.json: read-only file system`},
+		"db-corruption": {`panic: leveldb: corrupted or incomplete meta file`, `pebble: corruption: checksum mismatch in 000042.sst`, `failed to load latest version: database is corrupt`, `cs.wal: corrupted WAL file`},
+	}
+	for name, lines := range hit {
+		for _, l := range lines {
+			if !re[name].MatchString(l) {
+				t.Errorf("%s should match %q", name, l)
+			}
+		}
+	}
+	for _, l := range []string{
+		`I[2026-10-15] committed state module=state height=100`,
+		`INF indexed block events module=txindex height=100`,
+		`ERR dial tcp 10.0.0.1:26656: connection refused module=p2p`,
+	} {
+		for name := range hit {
+			if re[name].MatchString(l) {
+				t.Errorf("%s matched an ordinary line %q", name, l)
+			}
+		}
+	}
+}

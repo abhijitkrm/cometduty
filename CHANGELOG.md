@@ -3,6 +3,22 @@
 All notable changes to cometduty are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- Disk alerts beyond free space (local checks, node `home:` mount):
+  - `disk-error` (critical): the home filesystem fails to answer twice in a
+    row, or reading it returns an I/O error — a failed, detached or
+    unmounted disk.
+  - `disk-inodes`: free inodes under `inode_free_pct_alert`%.
+  - `disk-filling`: at the last hour's rate, full within
+    `disk_fill_hours_alert` hours.
+  - `signer-corrupt` (critical): `priv_validator_state.json` exists but
+    doesn't parse. It used to be skipped silently.
+- Built-in log rules `disk-io-error`, `read-only-fs` and `db-corruption`;
+  `disk-full` also matches `disk quota exceeded`.
+
 ## [0.3.0] — 2026-10-14
 
 ### Changed
