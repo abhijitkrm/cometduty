@@ -382,3 +382,19 @@ func TestStallScope(t *testing.T) {
 		t.Fatalf("two endpoints: %s", key)
 	}
 }
+
+// An RPC outage longer than stalled_minutes isn't a stall once the endpoint
+// is back: the clock restarts there.
+func TestStallClockRestartsAfterOutage(t *testing.T) {
+	c, _, _, _ := newLocalChain(t, config.AlertConfig{})
+	now := time.Now()
+	c.lastBlockTime = now.Add(-3 * time.Minute) // last block before the outage
+	if got := c.stallAge(now); got != 3*time.Minute {
+		t.Fatalf("no outage: age %v, want 3m", got)
+	}
+	c.setNoNodes(true)
+	c.setNoNodes(false) // back now
+	if got := c.stallAge(time.Now()); got > time.Second {
+		t.Fatalf("just back: age %v, want ~0", got)
+	}
+}

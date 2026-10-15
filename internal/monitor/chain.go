@@ -157,7 +157,8 @@ type Chain struct {
 	lastBlockTime  time.Time
 	lastHeight     int64
 	stallAlarm     bool
-	stallKey       string // the open stall alert's key: the chain's, or its only node's
+	stallKey       string    // the open stall alert's key: the chain's, or its only node's
+	backAt         time.Time // when an endpoint answered again after none did
 	stallMsg       string
 	noNodes        bool
 	noNodesAlarm   bool
@@ -617,6 +618,9 @@ func (c *Chain) setNoNodes(v bool) {
 	c.mu.Lock()
 	if v && !c.noNodes {
 		c.noNodesSince = time.Now()
+	}
+	if !v && c.noNodes {
+		c.backAt = time.Now()
 	}
 	c.noNodes = v
 	c.mu.Unlock()

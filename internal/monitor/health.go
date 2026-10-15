@@ -159,6 +159,9 @@ func (c *Chain) probeAllNodes(ctx context.Context) {
 				fmt.Sprintf("RPC node %s consensus recovered on %s (round %d)", nodeLabel(n), chainID, n.round))
 		}
 	}
+	if c.noNodes && anyUp {
+		c.backAt = time.Now()
+	}
 	c.noNodes = !anyUp
 	if !anyUp {
 		c.client = nil
@@ -482,7 +485,7 @@ func (c *Chain) watchLoop(ctx context.Context) {
 
 		// --- stalled chain detection (with correct resolve) ---
 		if a.StalledEnabled && chainScope {
-			stallFor := time.Since(c.lastBlockTime)
+			stallFor := c.stallAge(time.Now())
 			stalled := !c.lastBlockTime.IsZero() && stallFor > time.Duration(a.StalledMinutes)*time.Minute
 			if !c.stallAlarm {
 				c.stallKey, c.stallMsg = c.stallScope(cfg.ChainID, a.StalledMinutes)
@@ -759,4 +762,16 @@ func (c *Chain) stallScope(chainID string, minutes int) (string, string) {
 			nodeLabel(n), minutes, chainID)
 	}
 	return "stalled:" + chainID, fmt.Sprintf("stalled: no new block on %s for %d minutes", chainID, minutes)
+}
+
+// stallAge is how long no new block has been seen while an endpoint
+// answered. Blocks missed while none did aren't a stall seen: the clock
+// restarts when one is back, else every outage ends in a stall page before
+// the first new block lands. Called under c.mu.
+func (c *Chain) stallAge(now time.Time) time.Duration {
+	age := now.Sub(c.lastBlockTime)
+	if back := now.Sub(c.backAt); back < age {
+		age = back
+	}
+	return age
 }

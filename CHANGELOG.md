@@ -33,6 +33,15 @@ All notable changes to cometduty are documented here. The format follows
 
 ### Fixed
 
+- Docker log source loaded dockerd heavily: a 30 s client timeout cut
+  every followed stream, and each reconnect asked for `since=`, which on the
+  json-file driver reads the container's whole log from its start (GBs
+  without rotation). On busy hosts the scans piled up (300 readers, dockerd
+  at 100–200% CPU). The stream now has no body timeout, and reconnects read
+  back with `tail=` and drop the lines already seen.
+- After an RPC outage longer than `stalled_minutes`, a stall was paged as
+  soon as the endpoint answered, before the first new block. The stall clock
+  now restarts when an endpoint is back.
 - The file log source follows a log renamed away by logrotate instead of
   watching the old file forever.
 
