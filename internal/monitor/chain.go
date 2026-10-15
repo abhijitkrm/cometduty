@@ -93,6 +93,7 @@ type nodeState struct {
 	inodeAlarm    bool      // disk-inodes alert currently open
 	fillAlarm     bool      // disk-filling alert currently open
 	roAlarm       bool      // disk-readonly alert currently open
+	roChecked     bool      // the read-only check has said whether it works
 	diskSamples   []diskSample
 }
 

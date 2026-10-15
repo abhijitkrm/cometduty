@@ -340,10 +340,18 @@ func (c *Chain) probeReadonly(n *nodeState) {
 		return
 	}
 	raw, err := os.ReadFile(hc.Mounts)
-	if err != nil {
-		return
+	mnt, ro := "", false
+	if err == nil {
+		mnt, ro = mountOf(string(raw), hc.HomePath)
 	}
-	mnt, ro := mountOf(string(raw), hc.HomePath)
+	if !n.roChecked { // say once whether the check works
+		n.roChecked = true
+		if mnt == "" {
+			c.log.Warn("read-only check off: no mount for the node home in the host mount table", "node", nodeLabel(n), "mounts", hc.Mounts, "home_path", hc.HomePath, "err", err)
+		} else {
+			c.log.Info("read-only check on", "node", nodeLabel(n), "mount", mnt, "read_only", ro)
+		}
+	}
 	if mnt == "" {
 		return
 	}
