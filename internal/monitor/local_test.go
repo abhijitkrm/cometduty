@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -208,5 +210,191 @@ func TestEvmLagMeasuredAtProbeTime(t *testing.T) {
 	c.mu.Unlock()
 	if lag != 3 {
 		t.Fatalf("lag %d, want 3", lag)
+	}
+}
+
+// fakeStatfs swaps the filesystem reader for one test.
+func fakeStatfs(t *testing.T, f func(string) (fsStat, error)) {
+	t.Helper()
+	old := statfs
+	statfs = f
+	t.Cleanup(func() { statfs = old })
+}
+
+func TestDiskErrorAfterTwoFailures(t *testing.T) {
+	c, n, eng, home := newLocalChain(t, config.AlertConfig{})
+	writeSignerState(t, home, 10)
+	fail := true
+	fakeStatfs(t, func(string) (fsStat, error) {
+		if fail {
+			return fsStat{}, syscall.EIO
+		}
+		return fsStat{free: 100 << 30}, nil
+	})
+	c.probeLocal(n)
+	if n.diskErrAlarm {
+		t.Fatal("one failure is not a failed disk")
+	}
+	c.probeLocal(n)
+	if !n.diskErrAlarm {
+		t.Fatal("expected disk-error after two failures")
+	}
+	waitActive(t, eng, "test", 1)
+	fail = false
+	c.probeLocal(n)
+	if n.diskErrAlarm {
+		t.Fatal("disk-error should clear once the filesystem answers")
+	}
+	waitActive(t, eng, "test", 0)
+}
+
+func TestInodesLow(t *testing.T) {
+	c, n, eng, home := newLocalChain(t, config.AlertConfig{InodeFreePctAlert: 5})
+	writeSignerState(t, home, 10)
+	ffree := 2.0
+	fakeStatfs(t, func(string) (fsStat, error) { return fsStat{free: 100 << 30, files: 100, ffree: ffree}, nil })
+	c.probeLocal(n)
+	if !n.inodeAlarm {
+		t.Fatal("expected disk-inodes at 2% free")
+	}
+	waitActive(t, eng, "test", 1)
+	ffree = 50
+	c.probeLocal(n)
+	if n.inodeAlarm {
+		t.Fatal("disk-inodes should clear at 50% free")
+	}
+}
+
+func TestDiskFillingRate(t *testing.T) {
+	c, n, eng, home := newLocalChain(t, config.AlertConfig{DiskFillHoursAlert: 12})
+	writeSignerState(t, home, 10)
+	free := float64(10 << 30)
+	fakeStatfs(t, func(string) (fsStat, error) { return fsStat{free: free}, nil })
+	// 30 minutes ago there was 12 GiB free: 4 GiB/h, full in 2.5h
+	n.diskSamples = []diskSample{{at: time.Now().Add(-30 * time.Minute), free: 12 << 30}}
+	c.probeLocal(n)
+	if !n.fillAlarm {
+		t.Fatal("expected disk-filling at 4 GiB/h with 10 GiB left")
+	}
+	waitActive(t, eng, "test", 1)
+	// space freed: the rate turns negative
+	free = 40 << 30
+	c.probeLocal(n)
+	if n.fillAlarm {
+		t.Fatal("disk-filling should clear once the disk stops filling")
+	}
+}
+
+func TestDiskFillingNeedsSpan(t *testing.T) {
+	c, n, _, home := newLocalChain(t, config.AlertConfig{DiskFillHoursAlert: 12})
+	writeSignerState(t, home, 10)
+	fakeStatfs(t, func(string) (fsStat, error) { return fsStat{free: 1 << 30}, nil })
+	// a 5-minute burst of writes isn't a trend
+	n.diskSamples = []diskSample{{at: time.Now().Add(-5 * time.Minute), free: 5 << 30}}
+	c.probeLocal(n)
+	if n.fillAlarm {
+		t.Fatal("a rate over 5 minutes must not alert")
+	}
+}
+
+func TestSignerCorruptAfterTwoReads(t *testing.T) {
+	c, n, eng, home := newLocalChain(t, config.AlertConfig{})
+	writeSignerState(t, home, 10)
+	c.probeLocal(n)
+	f := filepath.Join(home, "data", "priv_validator_state.json")
+	if err := os.WriteFile(f, []byte("{\"height\":\"1\x00\x00"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c.probeLocal(n)
+	if n.corruptAlarm {
+		t.Fatal("one bad read may be torn; not corrupt yet")
+	}
+	c.probeLocal(n)
+	if !n.corruptAlarm {
+		t.Fatal("expected signer-corrupt after two bad reads")
+	}
+	waitActive(t, eng, "test", 1)
+	writeSignerState(t, home, 11)
+	c.probeLocal(n)
+	if n.corruptAlarm {
+		t.Fatal("signer-corrupt should clear once the file parses")
+	}
+	waitActive(t, eng, "test", 0)
+}
+
+func TestMountOf(t *testing.T) {
+	table := "/dev/root / ext4 rw,relatime,discard 0 0\n" +
+		"/dev/nvme1n1 /data xfs ro,relatime 0 0\n" +
+		"/dev/nvme2n1 /data/my\\040node ext4 rw 0 0\n" +
+		"tmpfs /run tmpfs rw,nosuid 0 0\n"
+	for path, want := range map[string]struct {
+		mnt string
+		ro  bool
+	}{
+		"/home/ubuntu/.node":  {"/", false},
+		"/data/evmd":          {"/data", true},
+		"/data":               {"/data", true},
+		"/data/my node/x":     {"/data/my node", false},
+		"/database/elsewhere": {"/", false},
+	} {
+		mnt, ro := mountOf(table, path)
+		if mnt != want.mnt || ro != want.ro {
+			t.Errorf("mountOf(%s) = %s %v, want %s %v", path, mnt, ro, want.mnt, want.ro)
+		}
+	}
+	// a remount on the same point shadows the earlier entry
+	if _, ro := mountOf("/dev/a /data ext4 rw 0 0\n/dev/a /data ext4 ro 0 0\n", "/data/x"); !ro {
+		t.Error("the later mount on /data should win")
+	}
+}
+
+func TestDiskReadonlyAlert(t *testing.T) {
+	c, n, eng, home := newLocalChain(t, config.AlertConfig{})
+	writeSignerState(t, home, 10)
+	mounts := filepath.Join(t.TempDir(), "mounts")
+	write := func(opts string) {
+		if err := os.WriteFile(mounts, []byte("/dev/root / ext4 "+opts+" 0 0\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n.cfg.Host = &config.HostConfig{Mounts: mounts, HomePath: "/home/ubuntu/node"}
+	write("ro,relatime")
+	c.probeLocal(n)
+	if !n.roAlarm {
+		t.Fatal("expected disk-readonly")
+	}
+	waitActive(t, eng, "test", 1)
+	write("rw,relatime")
+	c.probeLocal(n)
+	if n.roAlarm {
+		t.Fatal("disk-readonly should clear once read-write")
+	}
+	waitActive(t, eng, "test", 0)
+}
+
+func TestStallScope(t *testing.T) {
+	c, _, _, _ := newLocalChain(t, config.AlertConfig{})
+	if key, msg := c.stallScope("test-1", 2); key != "node-stalled:http://n:26657" || !strings.Contains(msg, "only endpoint") {
+		t.Fatalf("one endpoint: %s %s", key, msg)
+	}
+	c.nodes = append(c.nodes, &nodeState{cfg: &config.NodeConfig{URL: "http://m:26657"}})
+	if key, _ := c.stallScope("test-1", 2); key != "stalled:test-1" {
+		t.Fatalf("two endpoints: %s", key)
+	}
+}
+
+// An RPC outage longer than stalled_minutes isn't a stall once the endpoint
+// is back: the clock restarts there.
+func TestStallClockRestartsAfterOutage(t *testing.T) {
+	c, _, _, _ := newLocalChain(t, config.AlertConfig{})
+	now := time.Now()
+	c.lastBlockTime = now.Add(-3 * time.Minute) // last block before the outage
+	if got := c.stallAge(now); got != 3*time.Minute {
+		t.Fatalf("no outage: age %v, want 3m", got)
+	}
+	c.setNoNodes(true)
+	c.setNoNodes(false) // back now
+	if got := c.stallAge(time.Now()); got > time.Second {
+		t.Fatalf("just back: age %v, want ~0", got)
 	}
 }

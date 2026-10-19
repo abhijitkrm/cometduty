@@ -86,6 +86,15 @@ type nodeState struct {
 	signerAlarm   bool      // signer-stalled alert currently open
 	regressAlarm  bool      // signer-regressed alert currently open
 	signFileAlarm bool      // signer-state unreadable alert currently open
+	corruptAlarm  bool      // signer-corrupt alert currently open
+	signBad       int       // priv_validator_state.json reads in a row that didn't parse
+	diskErrs      int       // statfs failures in a row
+	diskErrAlarm  bool      // disk-error alert currently open
+	inodeAlarm    bool      // disk-inodes alert currently open
+	fillAlarm     bool      // disk-filling alert currently open
+	roAlarm       bool      // disk-readonly alert currently open
+	roChecked     bool      // the read-only check has said whether it works
+	diskSamples   []diskSample
 }
 
 // Target is one validator being watched on a chain.
@@ -149,6 +158,9 @@ type Chain struct {
 	lastBlockTime  time.Time
 	lastHeight     int64
 	stallAlarm     bool
+	stallKey       string    // the open stall alert's key: the chain's, or its only node's
+	backAt         time.Time // when an endpoint answered again after none did
+	stallMsg       string
 	noNodes        bool
 	noNodesAlarm   bool
 	noNodesSince   time.Time
@@ -607,6 +619,9 @@ func (c *Chain) setNoNodes(v bool) {
 	c.mu.Lock()
 	if v && !c.noNodes {
 		c.noNodesSince = time.Now()
+	}
+	if !v && c.noNodes {
+		c.backAt = time.Now()
 	}
 	c.noNodes = v
 	c.mu.Unlock()
